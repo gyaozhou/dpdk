@@ -98,6 +98,7 @@ get_data_kva(struct kni_dev *kni, void *pkt_kva)
 	return kva2data_kva(pkt_kva);
 }
 
+// zhou: construct request of vEth config operations, vEth -> PMD
 /*
  * It can be called to process the request.
  */
@@ -125,12 +126,15 @@ kni_net_process_request(struct kni_dev *kni, struct rte_kni_request *req)
 		goto fail;
 	}
 
+    // zhou: block here to wait response from PMD, that means PMD should handle
+    //       it as soon as possible.
 	ret_val = wait_event_interruptible_timeout(kni->wq,
 			kni_fifo_count(kni->resp_q), 3 * HZ);
 	if (signal_pending(current) || ret_val <= 0) {
 		ret = -ETIME;
 		goto fail;
 	}
+
 	num = kni_fifo_get(kni->resp_q, (void **)&resp_va, 1);
 	if (num != 1 || resp_va != kni->sync_va) {
 		/* This should never happen */
@@ -157,7 +161,9 @@ kni_net_open(struct net_device *dev)
 	struct rte_kni_request req;
 	struct kni_dev *kni = netdev_priv(dev);
 
+    // zhou: allow kernel stack to transmit
 	netif_start_queue(dev);
+
 	if (dflt_carrier == 1)
 		netif_carrier_on(dev);
 	else
@@ -260,6 +266,7 @@ kni_net_config(struct net_device *dev, struct ifmap *map)
 	return 0;
 }
 
+// zhou: kthead to handle packet, vEth -> PMD
 /*
  * Transmit a packet (called by the kernel)
  */
@@ -307,6 +314,8 @@ kni_net_tx(struct sk_buff *skb, struct net_device *dev)
 		pkt_va = pa2va(pkt_pa, pkt_kva);
 
 		len = skb->len;
+
+        // zhou: copy packet from skb to mbuf.
 		memcpy(data_kva, skb->data, len);
 		if (unlikely(len < ETH_ZLEN)) {
 			memset(data_kva + len, 0, ETH_ZLEN - len);
@@ -343,6 +352,7 @@ drop:
 	return NETDEV_TX_OK;
 }
 
+// zhou: kthread to handle pakcets, PMD -> vEth
 /*
  * RX: normal working mode
  */
@@ -386,6 +396,7 @@ kni_net_rx_normal(struct kni_dev *kni)
 			continue;
 		}
 
+        // zhou: packet will be copied to skb
 		if (kva->nb_segs == 1) {
 			memcpy(skb_put(skb, len), data_kva, len);
 		} else {
@@ -410,6 +421,7 @@ kni_net_rx_normal(struct kni_dev *kni)
 		skb->protocol = eth_type_trans(skb, dev);
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 
+        // zhou: handover to kernel stack.
 		/* Call netif interface */
 		netif_rx_ni(skb);
 
@@ -418,6 +430,7 @@ kni_net_rx_normal(struct kni_dev *kni)
 		dev->stats.rx_packets++;
 	}
 
+    // zhou: due to packet already copied to skb, release mbuf.
 	/* Burst enqueue mbufs into free_q */
 	ret = kni_fifo_put(kni->free_q, kni->va, num_rx);
 	if (ret != num_rx)
@@ -518,6 +531,7 @@ kni_net_rx_lo_fifo(struct kni_dev *kni)
 	dev->stats.rx_packets += num;
 }
 
+// zhou: used in loopback only.
 /*
  * RX: loopback with enqueue/dequeue fifos and sk buffer copies.
  */
@@ -617,6 +631,7 @@ kni_net_rx(struct kni_dev *kni)
 	 * It doesn't need to check if it is NULL pointer,
 	 * as it has a default value
 	 */
+    // zhou: "kni_net_rx_normal()" in normal
 	(*kni_net_rx_func)(kni);
 }
 
@@ -777,13 +792,17 @@ static const struct header_ops kni_net_header_ops = {
 };
 
 static const struct net_device_ops kni_net_netdev_ops = {
+    // zhou: handle start by kernel
 	.ndo_open = kni_net_open,
 	.ndo_stop = kni_net_release,
+    // zhou: handle up down by user.
 	.ndo_set_config = kni_net_config,
 	.ndo_change_rx_flags = kni_net_change_rx_flags,
 	.ndo_start_xmit = kni_net_tx,
 	.ndo_change_mtu = kni_net_change_mtu,
+    // zhou: rare be used, used to notify transmit timeout.
 	.ndo_tx_timeout = kni_net_tx_timeout,
+
 	.ndo_set_mac_address = kni_net_set_mac,
 #ifdef HAVE_CHANGE_CARRIER_CB
 	.ndo_change_carrier = kni_net_change_carrier,
@@ -811,6 +830,7 @@ kni_net_init(struct net_device *dev)
 	mutex_init(&kni->sync_lock);
 
 	ether_setup(dev); /* assign some of the fields */
+
 	dev->netdev_ops      = &kni_net_netdev_ops;
 	dev->header_ops      = &kni_net_header_ops;
 	dev->ethtool_ops     = &kni_net_ethtool_ops;

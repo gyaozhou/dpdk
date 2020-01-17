@@ -21,9 +21,11 @@
 #include <rte_tailq.h>
 #include "eal_private.h"
 
+
 /** user device double-linked queue type definition */
 TAILQ_HEAD(rte_devargs_list, rte_devargs);
 
+// zhou: user defined whitelist or blacklist or vdev
 /** Global list of user devices */
 static struct rte_devargs_list devargs_list =
 	TAILQ_HEAD_INITIALIZER(devargs_list);
@@ -195,6 +197,7 @@ rte_devargs_parse(struct rte_devargs *da, const char *dev)
 		if (rte_bus_find_by_device_name(devname) == bus)
 			break;
 	} while (1);
+
 	/* Store device name */
 	i = 0;
 	while (devname[i] != '\0' && devname[i] != ',') {
@@ -207,6 +210,7 @@ rte_devargs_parse(struct rte_devargs *da, const char *dev)
 			return -EINVAL;
 		}
 	}
+
 	da->name[i] = '\0';
 	if (bus == NULL) {
 		bus = rte_bus_find_by_device_name(da->name);
@@ -296,6 +300,7 @@ rte_devargs_insert(struct rte_devargs **da)
 	return 0;
 }
 
+// zhou: README,
 /* store a whitelist parameter for later parsing */
 int
 rte_devargs_add(enum rte_devtype devtype, const char *devargs_str)
@@ -311,10 +316,13 @@ rte_devargs_add(enum rte_devtype devtype, const char *devargs_str)
 
 	if (rte_devargs_parse(devargs, dev))
 		goto fail;
+
 	devargs->type = devtype;
 	bus = devargs->bus;
+
 	if (devargs->type == RTE_DEVTYPE_BLACKLISTED_PCI)
 		devargs->policy = RTE_DEV_BLACKLISTED;
+
 	if (bus->conf.scan_mode == RTE_BUS_SCAN_UNDEFINED) {
 		if (devargs->policy == RTE_DEV_WHITELISTED)
 			bus->conf.scan_mode = RTE_BUS_SCAN_WHITELIST;

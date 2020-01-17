@@ -16,6 +16,8 @@
 struct feature_entry {
 	uint32_t leaf;				/**< cpuid leaf */
 	uint32_t subleaf;			/**< cpuid subleaf */
+    // zhou: EAX(input/output), EBX/ECX/EDX(output) work as parameter of "cpuid"
+    //       instruction.
 	uint32_t reg;				/**< cpuid register */
 	uint32_t bit;				/**< cpuid register bit */
 #define CPU_FLAG_NAME_MAX_LEN 64
@@ -25,6 +27,18 @@ struct feature_entry {
 #define FEAT_DEF(name, leaf, subleaf, reg, bit) \
 	[RTE_CPUFLAG_##name] = {leaf, subleaf, reg, bit, #name },
 
+// zhou: expand FEAT_DEF, will be a new way to define struct array.
+/*
+  const struct feature_entry rte_cpu_feature_table[] = {
+      [RTE_CPUFLAG_SSE3] = {0x00000001, 0, RTE_REG_ECX,  0},
+      ...
+      [RTE_CPUFLAG_VMX] = {0x00000001, 0, RTE_REG_ECX,  5},
+      ...
+      }
+*/
+
+// zhou: refer to "Section: Feature Information Returned in the ECX Register"/...
+//       "Intel 64 and IA-32 Architectures Software Developer’s Manual: Instruction Set Reference"
 const struct feature_entry rte_cpu_feature_table[] = {
 	FEAT_DEF(SSE3, 0x00000001, 0, RTE_REG_ECX,  0)
 	FEAT_DEF(PCLMULQDQ, 0x00000001, 0, RTE_REG_ECX,  1)
@@ -122,6 +136,7 @@ const struct feature_entry rte_cpu_feature_table[] = {
 	FEAT_DEF(INVTSC, 0x80000007, 0, RTE_REG_EDX,  8)
 };
 
+// zhou: API to fetch CPU features, instead to read "/proc/cpuinfo".
 int
 rte_cpu_get_flag_enabled(enum rte_cpu_flag_t feature)
 {
@@ -139,6 +154,7 @@ rte_cpu_get_flag_enabled(enum rte_cpu_flag_t feature)
 		/* This entry in the table wasn't filled out! */
 		return -EFAULT;
 
+    // zhou: gcc provided, which running asm instruction "cpuid"
 	maxleaf = __get_cpuid_max(feat->leaf & 0x80000000, NULL);
 
 	if (maxleaf < feat->leaf)
@@ -147,6 +163,8 @@ rte_cpu_get_flag_enabled(enum rte_cpu_flag_t feature)
 	 __cpuid_count(feat->leaf, feat->subleaf,
 			 regs[RTE_REG_EAX], regs[RTE_REG_EBX],
 			 regs[RTE_REG_ECX], regs[RTE_REG_EDX]);
+
+     // zhou: check corresponding feature bit is set.
 
 	/* check if the feature is enabled */
 	return (regs[feat->reg] >> feat->bit) & 1;

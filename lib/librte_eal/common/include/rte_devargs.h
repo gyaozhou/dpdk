@@ -31,6 +31,7 @@ extern "C" {
 enum rte_devtype {
 	RTE_DEVTYPE_WHITELISTED_PCI,
 	RTE_DEVTYPE_BLACKLISTED_PCI,
+    // zhou: vdev, such as bonding ethdev
 	RTE_DEVTYPE_VIRTUAL,
 };
 
@@ -47,22 +48,32 @@ enum rte_devtype {
 struct rte_devargs {
 	/** Next in list. */
 	TAILQ_ENTRY(rte_devargs) next;
+
 	/** Type of device. */
 	enum rte_devtype type;
+
+    // zhou: whitelist/blacklist/virtual
 	/** Device policy. */
 	enum rte_dev_policy policy;
+
+    // zhou:
 	/** Name of the device. */
 	char name[RTE_DEV_NAME_MAX_LEN];
+
 	RTE_STD_C11
 	union {
 	/** Arguments string as given by user or "" for no argument. */
 		char *args;
 		const char *drv_str;
 	};
+
 	struct rte_bus *bus; /**< bus handle. */
+
 	struct rte_class *cls; /**< class handle. */
+
 	const char *bus_str; /**< bus-related part of device string. */
 	const char *cls_str; /**< class-related part of device string. */
+
 	const char *data; /**< Device string storage. */
 };
 

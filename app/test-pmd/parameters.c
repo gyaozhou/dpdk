@@ -832,6 +832,7 @@ launch_args_parse(int argc, char** argv)
 			if (!strcmp(lgopts[opt_idx].name, "mp-anon")) {
 				mp_alloc_type = MP_ALLOC_ANON;
 			}
+            // zhou: then use no-hugepage when use xmem/xmemhuge?
 			if (!strcmp(lgopts[opt_idx].name, "mp-alloc")) {
 				if (!strcmp(optarg, "native"))
 					mp_alloc_type = MP_ALLOC_NATIVE;
@@ -866,6 +867,7 @@ launch_args_parse(int argc, char** argv)
 						"Invalid socket id");
 				}
 			}
+            // zhou:
 			if (!strcmp(lgopts[opt_idx].name, "mbuf-size")) {
 				n = atoi(optarg);
 				if (n > 0 && n <= 0xFFFF)
@@ -898,6 +900,7 @@ launch_args_parse(int argc, char** argv)
 				n = atoi(optarg);
 				rx_mode.max_lro_pkt_size = (uint32_t) n;
 			}
+
 			if (!strcmp(lgopts[opt_idx].name, "pkt-filter-mode")) {
 				if (!strcmp(optarg, "signature"))
 					fdir_conf.mode =

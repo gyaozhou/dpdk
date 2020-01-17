@@ -58,11 +58,22 @@ typedef void (*rte_dev_event_cb_fn)(const char *device_name,
  * Device driver.
  */
 enum rte_kernel_driver {
+    // zhou: driver binded is not interesting.
 	RTE_KDRV_UNKNOWN = 0,
+
+    // zhou: "igb_uio.ko"
 	RTE_KDRV_IGB_UIO,
+
+    // zhou: "vfio-pci.ko"
 	RTE_KDRV_VFIO,
+
+    // zhou: "uio_pci_generic.ko"
 	RTE_KDRV_UIO_GENERIC,
+
+    // zhou: FreeBSD has only pass through driver, due to UIO is not safe?
 	RTE_KDRV_NIC_UIO,
+
+    // zhou: no driver binded
 	RTE_KDRV_NONE,
 };
 
@@ -101,12 +112,25 @@ struct rte_driver {
 /**
  * A structure describing a generic device.
  */
+// zhou: common attribute for a device, describe which bus, NUMA node this device
+//       attched.
 struct rte_device {
+    // zhou: dev by dev
 	TAILQ_ENTRY(rte_device) next; /**< Next device */
+
+    // zhou: where this name comes from ?
 	const char *name;             /**< Device name */
+
+    // zhou:
 	const struct rte_driver *driver; /**< Driver assigned after probing */
+
+    // zhou: which bus it attached.
 	const struct rte_bus *bus;    /**< Bus handle assigned on scan */
+
+    // zhou: which NUMA node, it attached.
 	int numa_node;                /**< NUMA node connection */
+
+    // zhou: vdev definitely owns several parameters.
 	struct rte_devargs *devargs;  /**< Arguments for latest probing */
 };
 
@@ -238,6 +262,7 @@ __attribute__((used)) = str
  * Example:
  * - "* igb_uio | uio_pci_generic | vfio"
  */
+// zhou: first segment means device pattern, second segemnt are required .ko
 #define RTE_PMD_REGISTER_KMOD_DEP(name, str) \
 static const char DRV_EXP_TAG(name, kmod_dep_export)[] \
 __attribute__((used)) = str

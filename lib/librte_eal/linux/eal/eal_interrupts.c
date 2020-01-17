@@ -90,6 +90,7 @@ struct rte_intr_source {
 /* global spinlock for interrupt data operation */
 static rte_spinlock_t intr_lock = RTE_SPINLOCK_INITIALIZER;
 
+// zhou:
 /* union buffer for pipe read/write */
 static union intr_pipefds intr_pipe;
 
@@ -1108,6 +1109,7 @@ eal_intr_thread_main(__rte_unused void *arg)
 	}
 }
 
+// zhou: create a dedicated thread to handle interrupt.
 int
 rte_eal_intr_init(void)
 {
@@ -1128,6 +1130,7 @@ rte_eal_intr_init(void)
 	/* create the host thread to wait/handle the interrupt */
 	ret = rte_ctrl_thread_create(&intr_thread, "eal-intr-thread", NULL,
 			eal_intr_thread_main, NULL);
+
 	if (ret != 0) {
 		rte_errno = -ret;
 		RTE_LOG(ERR, EAL,
@@ -1240,6 +1243,7 @@ rte_intr_tls_epfd(void)
 	return RTE_PER_LCORE(_epfd);
 }
 
+// zhou: README,
 int
 rte_epoll_wait(int epfd, struct rte_epoll_event *events,
 	       int maxevents, int timeout)

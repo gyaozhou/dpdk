@@ -637,6 +637,7 @@ rte_timer_pending(struct rte_timer *tim)
 	return tim->status.state == RTE_TIMER_PENDING;
 }
 
+// zhou: README,
 /* must be called periodically, run all timer that expired */
 static void
 __rte_timer_manage(struct rte_timer_data *timer_data)

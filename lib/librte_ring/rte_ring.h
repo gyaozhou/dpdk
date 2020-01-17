@@ -68,6 +68,7 @@ struct rte_ring_headtail {
 	uint32_t single;         /**< True if single prod/cons */
 };
 
+
 /**
  * An RTE ring structure.
  *
@@ -78,6 +79,7 @@ struct rte_ring_headtail {
  * values in a modulo-32bit base: that's why the overflow of the indexes is not
  * a problem.
  */
+// zhou: core data
 struct rte_ring {
 	/*
 	 * Note: this field kept the RTE_MEMZONE_NAMESIZE size due to ABI
@@ -103,8 +105,11 @@ struct rte_ring {
 	char pad2 __rte_cache_aligned; /**< empty cache line */
 };
 
+// zhou: without specify flag, the ring will be Multiply Producer or Consumer.
 #define RING_F_SP_ENQ 0x0001 /**< The default enqueue is "single-producer". */
 #define RING_F_SC_DEQ 0x0002 /**< The default dequeue is "single-consumer". */
+
+// zhou:
 /**
  * Ring is to hold exactly requested number of entries.
  * Without this flag set, the ring size requested must be a power of 2, and the

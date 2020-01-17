@@ -53,12 +53,14 @@
  * @return
  *	A pointer to a rte_eth_dev or NULL if allocation failed.
  */
+// zhou: README, used to allocte "vdev" virtual Ethernet device.
 static inline struct rte_eth_dev *
 rte_eth_vdev_allocate(struct rte_vdev_device *dev, size_t private_data_size)
 {
 	struct rte_eth_dev *eth_dev;
 	const char *name = rte_vdev_device_name(dev);
 
+    // zhou:
 	eth_dev = rte_eth_dev_allocate(name);
 	if (!eth_dev)
 		return NULL;

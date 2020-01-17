@@ -23,6 +23,7 @@
 		DEV_TX_OFFLOAD_GRE_TNL_TSO)) == 0) || \
 		(ctx)->gso_size < RTE_GSO_SEG_SIZE_MIN)
 
+// zhou: README,
 int
 rte_gso_segment(struct rte_mbuf *pkt,
 		const struct rte_gso_ctx *gso_ctx,

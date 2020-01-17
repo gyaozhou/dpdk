@@ -9,6 +9,9 @@
 extern "C" {
 #endif
 
+
+// zhou: part of the DPDK Packet Framework tool suite, which includes
+//       librte_port, librte_table, librte_pipeline.
 /**
  * @file
  * RTE Port

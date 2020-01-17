@@ -17,6 +17,8 @@ struct rte_mempool_ops_table rte_mempool_ops_table = {
 	.num_ops = 0
 };
 
+// zhou: README, used to integrate with client's memory management system.
+
 /* add a new ops struct in rte_mempool_ops_table, return its index. */
 int
 rte_mempool_register_ops(const struct rte_mempool_ops *h)

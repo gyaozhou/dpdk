@@ -22,6 +22,15 @@
 #define CORE_ID_FILE "topology/core_id"
 #define NUMA_NODE_PATH "/sys/devices/system/node"
 
+// zhou: "/sys/devices/system/cpu/cpu[n]/topology/core_id".
+//       In such cases it will not existing:
+//       "1. The CPU actually has more cores, and the firmware is disabling some
+//       "   of them (or the manufacturer disabled some)."
+//       "2. The firmware is leaving space in the various tables that the OS"
+//       "   reads this data from for the possibility of hot-plugging bigger "
+//       "   CPU's."
+//       In a word, this core is disabled by firmwarm, and can't be used by OS.
+
 /* Check if a cpu is present by the presence of the cpu information for it */
 int
 eal_cpu_detected(unsigned lcore_id)
@@ -44,6 +53,7 @@ eal_cpu_detected(unsigned lcore_id)
  * lcore_id and returns the numa node where the lcore is found. If lcore is not
  * found on any numa node, returns zero.
  */
+// zhou: "/sys/devices/system/cpu/cpu8/topology/physical_package_id", NUMA node
 unsigned
 eal_cpu_socket_id(unsigned lcore_id)
 {
@@ -60,6 +70,7 @@ eal_cpu_socket_id(unsigned lcore_id)
 	return 0;
 }
 
+// zhou: access the same file as "eal_cpu_detected()"
 /* Get the cpu core id value from the /sys/.../cpuX core_id value */
 unsigned
 eal_cpu_core_id(unsigned lcore_id)

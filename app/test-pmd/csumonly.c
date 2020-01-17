@@ -68,7 +68,9 @@ uint16_t vxlan_gpe_udp_port = 4790;
 struct testpmd_offload_info {
 	uint16_t ethertype;
 	uint8_t gso_enable;
+    // zhou: includes Ethernet header and VLAN tag.
 	uint16_t l2_len;
+    // zhou: only includes IPv4 or IPv6 header info.
 	uint16_t l3_len;
 	uint16_t l4_len;
 	uint8_t l4_proto;
@@ -77,8 +79,11 @@ struct testpmd_offload_info {
 	uint16_t outer_l2_len;
 	uint16_t outer_l3_len;
 	uint8_t outer_l4_proto;
+
+    // zhou: used by both UDP and TCP
 	uint16_t tso_segsz;
 	uint16_t tunnel_tso_segsz;
+
 	uint32_t pkt_len;
 };
 
@@ -279,6 +284,7 @@ parse_vxlan_gpe(struct rte_udp_hdr *udp_hdr,
 	struct rte_vxlan_gpe_hdr *vxlan_gpe_hdr;
 	uint8_t vxlan_gpe_len = sizeof(*vxlan_gpe_hdr);
 
+    // zhou: here use UDP port 4790 as VXLAN_GPE
 	/* Check udp destination port. */
 	if (udp_hdr->dst_port != _htons(vxlan_gpe_udp_port))
 		return;
@@ -289,6 +295,7 @@ parse_vxlan_gpe(struct rte_udp_hdr *udp_hdr,
 	if (!vxlan_gpe_hdr->proto || vxlan_gpe_hdr->proto ==
 	    RTE_VXLAN_GPE_TYPE_IPV4) {
 		info->is_tunnel = 1;
+        // zhou: like stack
 		info->outer_ethertype = info->ethertype;
 		info->outer_l2_len = info->l2_len;
 		info->outer_l3_len = info->l3_len;
@@ -423,6 +430,8 @@ parse_encap_ip(void *encap_ip, struct testpmd_offload_info *info)
 
 /* if possible, calculate the checksum of a packet in hw or sw,
  * depending on the testpmd command line configuration */
+
+// zhou: "tx_offloads" is the HW capability
 static uint64_t
 process_inner_cksums(void *l3_hdr, const struct testpmd_offload_info *info,
 	uint64_t tx_offloads)
@@ -453,6 +462,7 @@ process_inner_cksums(void *l3_hdr, const struct testpmd_offload_info *info,
 		ipv4_hdr->hdr_checksum = 0;
 
 		ol_flags |= PKT_TX_IPV4;
+
 		if (info->l4_proto == IPPROTO_TCP && tso_segsz) {
 			ol_flags |= PKT_TX_IP_CKSUM;
 		} else {
@@ -480,8 +490,10 @@ process_inner_cksums(void *l3_hdr, const struct testpmd_offload_info *info,
 						info->ethertype);
 			}
 		}
+
 		if (info->gso_enable)
 			ol_flags |= PKT_TX_UDP_SEG;
+
 	} else if (info->l4_proto == IPPROTO_TCP) {
 		tcp_hdr = (struct rte_tcp_hdr *)((char *)l3_hdr + info->l3_len);
 		tcp_hdr->cksum = 0;
@@ -494,8 +506,10 @@ process_inner_cksums(void *l3_hdr, const struct testpmd_offload_info *info,
 				get_udptcp_checksum(l3_hdr, tcp_hdr,
 					info->ethertype);
 		}
+
 		if (info->gso_enable)
 			ol_flags |= PKT_TX_TCP_SEG;
+
 	} else if (info->l4_proto == IPPROTO_SCTP) {
 		sctp_hdr = (struct rte_sctp_hdr *)
 			((char *)l3_hdr + info->l3_len);
@@ -640,6 +654,7 @@ mbuf_copy_split(const struct rte_mbuf *ms, struct rte_mbuf *md[],
 	else if (tlen != m->pkt_len)
 		return -EINVAL;
 
+    // zhou: head of the chain
 	md[0]->nb_segs = nb_seg;
 	md[0]->pkt_len = tlen;
 	md[0]->vlan_tci = m->vlan_tci;
@@ -670,6 +685,7 @@ pkt_copy_split(const struct rte_mbuf *pkt)
 	else
 		nb_seg = tx_pkt_nb_segs;
 
+    // zhou: default value 64 bytes for each segment, except the last one.
 	memcpy(seglen, tx_pkt_seg_lengths, nb_seg * sizeof(seglen[0]));
 
 	/* calculate number of segments to use and their length. */
@@ -681,6 +697,8 @@ pkt_copy_split(const struct rte_mbuf *pkt)
 
 	n = pkt->pkt_len - len;
 
+    // zhou: make sure the last segment contains all left data.
+    //       There is risk that it can't hold all left data as show below.
 	/* update size of the last segment to fit rest of the packet */
 	if (n >= 0) {
 		seglen[i - 1] += n;
@@ -699,6 +717,7 @@ pkt_copy_split(const struct rte_mbuf *pkt)
 		}
 
 		md[--i] = p;
+        // zhou: it can't hold all left data.
 		if (rte_pktmbuf_tailroom(md[i]) < seglen[i]) {
 			TESTPMD_LOG(ERR, "mempool %s, %u-th segment: "
 				"expected seglen: %u, "
@@ -801,25 +820,34 @@ pkt_burst_checksum_forward(struct fwd_stream *fs)
 	/* receive a burst of packet */
 	nb_rx = rte_eth_rx_burst(fs->rx_port, fs->rx_queue, pkts_burst,
 				 nb_pkt_per_burst);
+
 	if (unlikely(nb_rx == 0))
 		return;
+
 #ifdef RTE_TEST_PMD_RECORD_BURST_STATS
 	fs->rx_burst_stats.pkt_burst_spread[nb_rx]++;
 #endif
+
 	fs->rx_packets += nb_rx;
 	rx_bad_ip_csum = 0;
 	rx_bad_l4_csum = 0;
 	rx_bad_outer_l4_csum = 0;
+
 	gro_enable = gro_ports[fs->rx_port].enable;
 
+    // zhou: HW TX offload capability
 	txp = &ports[fs->tx_port];
 	tx_offloads = txp->dev_conf.txmode.offloads;
+
+    // zhou: TSO (TCP part of GSO) related
 	memset(&info, 0, sizeof(info));
 	info.tso_segsz = txp->tso_segsz;
 	info.tunnel_tso_segsz = txp->tunnel_tso_segsz;
 	if (gso_ports[fs->tx_port].enable)
 		info.gso_enable = 1;
 
+
+    // zhou: start to process received packets.
 	for (i = 0; i < nb_rx; i++) {
 		if (likely(i < nb_rx - 1))
 			rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[i + 1],
@@ -828,6 +856,7 @@ pkt_burst_checksum_forward(struct fwd_stream *fs)
 		m = pkts_burst[i];
 		info.is_tunnel = 0;
 		info.pkt_len = rte_pktmbuf_pkt_len(m);
+        // zhou: why ???
 		tx_ol_flags = m->ol_flags &
 			      (IND_ATTACHED_MBUF | EXT_ATTACHED_MBUF);
 		rx_ol_flags = m->ol_flags;
@@ -835,10 +864,14 @@ pkt_burst_checksum_forward(struct fwd_stream *fs)
 		/* Update the L3/L4 checksum error packet statistics */
 		if ((rx_ol_flags & PKT_RX_IP_CKSUM_MASK) == PKT_RX_IP_CKSUM_BAD)
 			rx_bad_ip_csum += 1;
+
 		if ((rx_ol_flags & PKT_RX_L4_CKSUM_MASK) == PKT_RX_L4_CKSUM_BAD)
 			rx_bad_l4_csum += 1;
+
+
 		if (rx_ol_flags & PKT_RX_OUTER_L4_CKSUM_BAD)
 			rx_bad_outer_l4_csum += 1;
+
 
 		/* step 1: dissect packet, parsing optional vlan, ip4/ip6, vxlan
 		 * and inner headers */
@@ -848,11 +881,15 @@ pkt_burst_checksum_forward(struct fwd_stream *fs)
 				&eth_hdr->d_addr);
 		rte_ether_addr_copy(&ports[fs->tx_port].eth_addr,
 				&eth_hdr->s_addr);
+
 		parse_ethernet(eth_hdr, &info);
 		l3_hdr = (char *)eth_hdr + info.l2_len;
 
 		/* check if it's a supported tunnel */
+        // zhou: configuration parse tunnel or not, try to detect which kind type
+        //       of tunnel, maybe not tunnel at all.
 		if (txp->parse_tunnel) {
+            // zhou: maybe outer L4 protocol
 			if (info.l4_proto == IPPROTO_UDP) {
 				struct rte_udp_hdr *udp_hdr;
 
@@ -864,6 +901,7 @@ pkt_burst_checksum_forward(struct fwd_stream *fs)
 					goto tunnel_update;
 				}
 				parse_vxlan_gpe(udp_hdr, &info);
+
 				if (info.is_tunnel) {
 					tx_ol_flags |=
 						PKT_TX_TUNNEL_VXLAN_GPE;
@@ -875,6 +913,7 @@ pkt_burst_checksum_forward(struct fwd_stream *fs)
 					tx_ol_flags |=
 						PKT_TX_TUNNEL_VXLAN;
 			} else if (info.l4_proto == IPPROTO_GRE) {
+
 				struct simple_gre_hdr *gre_hdr;
 
 				gre_hdr = (struct simple_gre_hdr *)
@@ -882,6 +921,7 @@ pkt_burst_checksum_forward(struct fwd_stream *fs)
 				parse_gre(gre_hdr, &info);
 				if (info.is_tunnel)
 					tx_ol_flags |= PKT_TX_TUNNEL_GRE;
+
 			} else if (info.l4_proto == IPPROTO_IPIP) {
 				void *encap_ip_hdr;
 
@@ -890,6 +930,7 @@ pkt_burst_checksum_forward(struct fwd_stream *fs)
 				if (info.is_tunnel)
 					tx_ol_flags |= PKT_TX_TUNNEL_IPIP;
 			}
+
 		}
 
 tunnel_update:
@@ -898,6 +939,7 @@ tunnel_update:
 			outer_l3_hdr = l3_hdr;
 			l3_hdr = (char *)l3_hdr + info.outer_l3_len + info.l2_len;
 		}
+
 
 		/* step 2: depending on user command line configuration,
 		 * recompute checksum either in software or flag the
@@ -916,6 +958,7 @@ tunnel_update:
 					tx_offloads,
 					!!(tx_ol_flags & PKT_TX_TCP_SEG));
 		}
+
 
 		/* step 3: fill the mbuf meta data (flags and header lengths) */
 
@@ -945,6 +988,7 @@ tunnel_update:
 				m->l3_len = info.l3_len;
 				m->l4_len = info.l4_len;
 			}
+
 		} else {
 			/* this is only useful if an offload flag is
 			 * set, but it does not hurt to fill it in any
@@ -952,16 +996,20 @@ tunnel_update:
 			m->l2_len = info.l2_len;
 			m->l3_len = info.l3_len;
 			m->l4_len = info.l4_len;
+
 			m->tso_segsz = info.tso_segsz;
 		}
+
 		m->ol_flags = tx_ol_flags;
 
+        // zhou: make it become mbuf chain, which will take more TX descriptors.
 		/* Do split & copy for the packet. */
 		if (tx_pkt_split != TX_PKT_SPLIT_OFF) {
 			p = pkt_copy_split(m);
 			if (p != NULL) {
 				rte_pktmbuf_free(m);
 				m = p;
+                // zhou: replace received packet
 				pkts_burst[i] = m;
 			}
 		}
@@ -1016,6 +1064,8 @@ tunnel_update:
 			printf("tx: flags=%s", buf);
 			printf("\n");
 		}
+
+        // zhou: recieved packets loop end.
 	}
 
 	if (unlikely(gro_enable)) {
@@ -1103,6 +1153,8 @@ tunnel_update:
 #endif
 }
 
+// zhou: used to test GRO, and GSO with checksum offload. Spcially, in case of
+//       several types tunnel.
 struct fwd_engine csum_fwd_engine = {
 	.fwd_mode_name  = "csum",
 	.port_fwd_begin = NULL,

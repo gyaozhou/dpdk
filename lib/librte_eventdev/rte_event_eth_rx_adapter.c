@@ -2001,6 +2001,7 @@ rte_event_eth_rx_adapter_create_ext(uint8_t id, uint8_t dev_id,
 	return 0;
 }
 
+// zhou: README,
 int
 rte_event_eth_rx_adapter_create(uint8_t id, uint8_t dev_id,
 		struct rte_event_port_conf *port_config)
@@ -2050,6 +2051,7 @@ rte_event_eth_rx_adapter_free(uint8_t id)
 	return 0;
 }
 
+// zhou: README,
 int
 rte_event_eth_rx_adapter_queue_add(uint8_t id,
 		uint16_t eth_dev_id,
@@ -2148,6 +2150,7 @@ rte_event_eth_rx_adapter_queue_add(uint8_t id,
 	return 0;
 }
 
+// zhou: README,
 int
 rte_event_eth_rx_adapter_queue_del(uint8_t id, uint16_t eth_dev_id,
 				int32_t rx_queue_id)
@@ -2266,6 +2269,7 @@ unlock_ret:
 	return ret;
 }
 
+// zhou: README,
 int
 rte_event_eth_rx_adapter_start(uint8_t id)
 {

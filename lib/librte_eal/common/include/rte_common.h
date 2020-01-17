@@ -107,6 +107,9 @@ typedef uint16_t unaligned_uint16_t;
  *   Lowest number is the first to run.
  */
 #ifndef RTE_INIT_PRIO /* Allow to override from EAL */
+// zhou: perform before main() executed, sequence depends on priority.
+//       I suppose that the main() function is defined by client, so this is
+//       safer way.
 #define RTE_INIT_PRIO(func, prio) \
 static void __attribute__((constructor(RTE_PRIO(prio)), used)) func(void)
 #endif
@@ -710,6 +713,7 @@ rte_log2_u64(uint64_t v)
 #define	RTE_LEN2MASK(ln, tp)	\
 	((tp)((uint64_t)-1 >> (sizeof(uint64_t) * CHAR_BIT - (ln))))
 
+// zhou: get 1-D array size.
 /** Number of elements in the array. */
 #define	RTE_DIM(a)	(sizeof (a) / sizeof ((a)[0]))
 

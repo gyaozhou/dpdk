@@ -372,6 +372,8 @@
 #define E1000_TXD_CMD_DEXT	0x20000000 /* Desc extension (0 = legacy) */
 #define E1000_TXD_CMD_VLE	0x40000000 /* Add VLAN tag */
 #define E1000_TXD_CMD_IDE	0x80000000 /* Enable Tidv register */
+
+// zhou: TX advanced Descriptor Write-Back STA
 #define E1000_TXD_STAT_DD	0x00000001 /* Descriptor Done */
 #define E1000_TXD_STAT_EC	0x00000002 /* Excess Collisions */
 #define E1000_TXD_STAT_LC	0x00000004 /* Late Collisions */

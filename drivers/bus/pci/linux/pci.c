@@ -41,6 +41,9 @@ pci_get_kernel_driver_by_path(const char *filename, char *dri_name,
 	if (!filename || !dri_name)
 		return -1;
 
+    // zhou: due to it links to "/sys/bus/pci/drivers/xx", so we could know
+    //       current binding driver by link file.
+    //       All available PCI device drivers locate here.
 	count = readlink(filename, path, PATH_MAX);
 	if (count >= PATH_MAX)
 		return -1;
@@ -60,6 +63,8 @@ pci_get_kernel_driver_by_path(const char *filename, char *dri_name,
 	return -1;
 }
 
+// zhou: we only can manage (memory mapping) device which binding with UIO/VFIO
+//       kernel module. Then Polling Mode Driver from user space can utilize it.
 /* Map pci device */
 int
 rte_pci_map_device(struct rte_pci_device *dev)
@@ -212,6 +217,7 @@ error:
 	return -1;
 }
 
+// zhou: format info in /sys/bus/pci/device/* into "rte_pci_device" and
 /* Scan one pci sysfs entry, and fill the devices list from it. */
 static int
 pci_scan_one(const char *dirname, const struct rte_pci_addr *addr)
@@ -289,6 +295,10 @@ pci_scan_one(const char *dirname, const struct rte_pci_addr *addr)
 			dev->max_vfs = (uint16_t)tmp;
 	}
 
+    // zhou: which NUMA/CPU this node connected with, does it mean:
+    //       it's more efficienct to access IO from this NUMA?
+    //       Why not use "%s/local_cpulist" or "%s/local_cpus" ???
+
 	/* get numa node, default to 0 if not present */
 	snprintf(filename, sizeof(filename), "%s/numa_node",
 		 dirname);
@@ -304,6 +314,7 @@ pci_scan_one(const char *dirname, const struct rte_pci_addr *addr)
 
 	pci_name_set(dev);
 
+    // zhou: PCI memory resource, which could perform configuration.
 	/* parse resources */
 	snprintf(filename, sizeof(filename), "%s/resource", dirname);
 	if (pci_parse_sysfs_resource(filename, dev) < 0) {
@@ -312,6 +323,7 @@ pci_scan_one(const char *dirname, const struct rte_pci_addr *addr)
 		return -1;
 	}
 
+    // zhou: get current binding driver.
 	/* parse driver */
 	snprintf(filename, sizeof(filename), "%s/driver", dirname);
 	ret = pci_get_kernel_driver_by_path(filename, driver, sizeof(driver));
@@ -321,6 +333,7 @@ pci_scan_one(const char *dirname, const struct rte_pci_addr *addr)
 		return -1;
 	}
 
+    // zhou: DPDK can operate device drived by such PCI device driver.
 	if (!ret) {
 		if (!strcmp(driver, "vfio-pci"))
 			dev->kdrv = RTE_KDRV_VFIO;
@@ -333,9 +346,13 @@ pci_scan_one(const char *dirname, const struct rte_pci_addr *addr)
 	} else
 		dev->kdrv = RTE_KDRV_NONE;
 
+
+    // zhou: link to PCI device list in PCI address by ascend !!!
 	/* device is valid, add in list (sorted) */
 	if (TAILQ_EMPTY(&rte_pci_bus.device_list)) {
+        // zhou: put in head
 		rte_pci_add_device(dev);
+
 	} else {
 		struct rte_pci_device *dev2;
 		int ret;
@@ -346,8 +363,11 @@ pci_scan_one(const char *dirname, const struct rte_pci_addr *addr)
 				continue;
 
 			if (ret < 0) {
+                // zhou: insert before
 				rte_pci_insert_device(dev2, dev);
+
 			} else { /* already registered */
+
 				if (!rte_dev_is_probed(&dev2->device)) {
 					dev2->kdrv = dev->kdrv;
 					dev2->max_vfs = dev->max_vfs;
@@ -378,11 +398,14 @@ pci_scan_one(const char *dirname, const struct rte_pci_addr *addr)
 						RTE_LOG(ERR, EAL, "Unexpected device scan at %s!\n",
 							filename);
 				}
+
 				free(dev);
 			}
+
 			return 0;
 		}
 
+        // zhou: put in tail
 		rte_pci_add_device(dev);
 	}
 
@@ -451,6 +474,8 @@ error:
  * Scan the content of the PCI bus, and the devices in the devices
  * list
  */
+// zhou: go through all PCI device under "/sys/bus/pci/devices/".
+//       In Linux, why not "/sys/bus/pci_express/" ?
 int
 rte_pci_scan(void)
 {
@@ -475,6 +500,10 @@ rte_pci_scan(void)
 		return -1;
 	}
 
+    // zhou: the sequence return from readdir decides ethdev port_id.
+    //       For harddisk based filesystem, it depends on disk format, and
+    //       filesystem's implementation.
+    //       For /sys memory based filesystem, it depends on Linux kernel.
 	while ((e = readdir(dir)) != NULL) {
 		if (e->d_name[0] == '.')
 			continue;
@@ -497,6 +526,7 @@ error:
 }
 
 #if defined(RTE_ARCH_X86)
+// zhou: check IOMMU capability, when iommu=pt, maybe return false.
 bool
 pci_device_iommu_support_va(const struct rte_pci_device *dev)
 {
@@ -507,6 +537,8 @@ pci_device_iommu_support_va(const struct rte_pci_device *dev)
 	FILE *fp;
 	uint64_t mgaw, vtd_cap_reg = 0;
 
+    // zhou: just check "/sys/bus/pci/devices/0000:xx:xx:x/iommu/intel-iommu/cap"
+    //       Once not existing, "intel_iommu=on" may be missed in kernel booting.
 	snprintf(filename, sizeof(filename),
 		 "%s/" PCI_PRI_FMT "/iommu/intel-iommu/cap",
 		 rte_pci_get_sysfs_path(), addr->domain, addr->bus, addr->devid,
@@ -545,6 +577,7 @@ pci_device_iommu_support_va(const struct rte_pci_device *dev)
 	rte_mem_set_dma_mask(mgaw);
 	return true;
 }
+
 #elif defined(RTE_ARCH_PPC_64)
 bool
 pci_device_iommu_support_va(__rte_unused const struct rte_pci_device *dev)

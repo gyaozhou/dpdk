@@ -18,6 +18,8 @@
  * by control APIs should be defined in this file.
  */
 
+// zhou: refer to DDP.
+
 #ifdef __cplusplus
 extern "C" {
 #endif

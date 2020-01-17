@@ -15,6 +15,8 @@
  * @param value
  *   Data value.
  */
+// zhou: README,
+
 #ifdef RTE_USE_C11_MEM_MODEL
 #define __KNI_LOAD_ACQUIRE(src) ({                         \
 		__atomic_load_n((src), __ATOMIC_ACQUIRE);           \
@@ -76,6 +78,7 @@ kni_fifo_put(struct rte_kni_fifo *fifo, void **data, unsigned num)
 /**
  * Get up to num elements from the fifo. Return the number actually read
  */
+// zhou: used by DPDK thread to fetch KNI FIFO.
 static inline unsigned
 kni_fifo_get(struct rte_kni_fifo *fifo, void **data, unsigned num)
 {

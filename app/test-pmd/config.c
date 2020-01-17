@@ -139,10 +139,13 @@ nic_stats_display(portid_t port_id)
 		print_valid_ports();
 		return;
 	}
+    // zhou:
 	rte_eth_stats_get(port_id, &stats);
+
 	printf("\n  %s NIC statistics for port %-2d %s\n",
 	       nic_stats_border, port_id, nic_stats_border);
 
+    // zhou: once per queue stats enabled (by mapping).
 	if ((!port->rx_queue_stats_mapping_enabled) && (!port->tx_queue_stats_mapping_enabled)) {
 		printf("  RX-packets: %-10"PRIu64" RX-missed: %-10"PRIu64" RX-bytes:  "
 		       "%-"PRIu64"\n",
@@ -1973,6 +1976,7 @@ port_rss_hash_conf_show(portid_t port_id, int show_rss_key)
 	printf("\n");
 }
 
+// zhou: README,
 void
 port_rss_hash_key_update(portid_t port_id, char rss_type[], uint8_t *hash_key,
 			 uint hash_key_len)
@@ -2052,6 +2056,11 @@ setup_fwd_config_of_each_lcore(struct fwd_config *cfg)
 	}
 }
 
+// zhou: In paired mode, the forwarding is between pairs of ports,
+//       for example: (0,1), (2,3), (4,5).
+//       In chained mode, the forwarding is to the next available port in the
+//       port mask, for example: (0,1), (1,2), (2,0).
+//       In loopback mode, send from where received.
 static portid_t
 fwd_topology_tx_port_get(portid_t rxp)
 {
@@ -2082,6 +2091,7 @@ fwd_topology_tx_port_get(portid_t rxp)
 	}
 }
 
+// zhou: "fwd io" mode, README,
 static void
 simple_fwd_config_setup(void)
 {
@@ -2099,12 +2109,15 @@ simple_fwd_config_setup(void)
 	 * must be lower or equal to the number of forwarding ports.
 	 */
 	cur_fwd_config.nb_fwd_lcores = (lcoreid_t) nb_fwd_lcores;
+
 	if (cur_fwd_config.nb_fwd_lcores > cur_fwd_config.nb_fwd_ports)
 		cur_fwd_config.nb_fwd_lcores =
 			(lcoreid_t) cur_fwd_config.nb_fwd_ports;
+
 	setup_fwd_config_of_each_lcore(&cur_fwd_config);
 
 	for (i = 0; i < cur_fwd_config.nb_fwd_ports; i++) {
+
 		fwd_streams[i]->rx_port   = fwd_ports_ids[i];
 		fwd_streams[i]->rx_queue  = 0;
 		fwd_streams[i]->tx_port   =
@@ -2361,6 +2374,7 @@ void
 fwd_config_setup(void)
 {
 	cur_fwd_config.fwd_eng = cur_fwd_eng;
+
 	if (strcmp(cur_fwd_eng->fwd_mode_name, "icmpecho") == 0) {
 		icmp_echo_config_setup();
 		return;
@@ -2418,6 +2432,7 @@ pkt_fwd_config_display(struct fwd_config *cfg)
 	if (retry_enabled)
 		printf("TX retry num: %u, delay between TX retries: %uus\n",
 			burst_tx_retry_num, burst_tx_delay_time);
+
 	for (lc_id = 0; lc_id < cfg->nb_fwd_lcores; lc_id++) {
 		printf("Logical Core %u (socket %u) forwards packets on "
 		       "%d streams:",
@@ -3627,6 +3642,7 @@ set_queue_rate_limit(portid_t port_id, uint16_t queue_idx, uint16_t rate)
 	return diag;
 }
 
+// zhou:
 int
 set_vf_rate_limit(portid_t port_id, uint16_t vf, uint16_t rate, uint64_t q_msk)
 {
@@ -3725,6 +3741,7 @@ mcast_addr_pool_remove(struct rte_port *port, uint32_t addr_idx)
 		sizeof(struct rte_ether_addr) * (port->mc_addr_nb - addr_idx));
 }
 
+// zhou: README,
 static void
 eth_port_multicast_addr_list_set(portid_t port_id)
 {
@@ -3740,6 +3757,7 @@ eth_port_multicast_addr_list_set(portid_t port_id)
 	       port->mc_addr_nb, port_id, -diag);
 }
 
+// zhou: README,
 void
 mcast_addr_add(portid_t port_id, struct rte_ether_addr *mc_addr)
 {

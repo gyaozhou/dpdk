@@ -143,10 +143,12 @@ portid_t nb_peer_eth_addrs = 0;
  * Probed Target Environment.
  */
 struct rte_port *ports;	       /**< For all probed ethernet ports. */
+
 portid_t nb_ports;             /**< Number of probed ethernet ports. */
 struct fwd_lcore **fwd_lcores; /**< For all probed logical cores. */
 lcoreid_t nb_lcores;           /**< Number of probed logical cores. */
 
+// zhou: all DPDK avaiable ports, parsed by EAL.
 portid_t ports_ids[RTE_MAX_ETHPORTS]; /**< Store all port ids. */
 
 /*
@@ -155,10 +157,12 @@ portid_t ports_ids[RTE_MAX_ETHPORTS]; /**< Store all port ids. */
  *    nb_fwd_ports  <= nb_cfg_ports  <= nb_ports
  */
 lcoreid_t nb_cfg_lcores; /**< Number of configured logical cores. */
+// zhou: nb-core
 lcoreid_t nb_fwd_lcores; /**< Number of forwarding logical cores. */
 portid_t  nb_cfg_ports;  /**< Number of configured ports. */
 portid_t  nb_fwd_ports;  /**< Number of forwarding ports. */
 
+// zhou: README,
 unsigned int fwd_lcores_cpuids[RTE_MAX_LCORE]; /**< CPU ids configuration. */
 portid_t fwd_ports_ids[RTE_MAX_ETHPORTS];      /**< Port ids configuration. */
 
@@ -192,10 +196,12 @@ uint16_t mempool_flags;
 
 struct fwd_config cur_fwd_config;
 struct fwd_engine *cur_fwd_eng = &io_fwd_engine; /**< IO mode by default. */
+
 uint32_t retry_enabled;
 uint32_t burst_tx_delay_time = BURST_TX_WAIT_US;
 uint32_t burst_tx_retry_num = BURST_TX_RETRIES;
 
+// zhou: 2048 + 128
 uint16_t mbuf_data_size = DEFAULT_MBUF_DATA_SIZE; /**< Mbuf data space size. */
 uint32_t param_total_num_mbufs = 0;  /**< number of mbufs in all pools - if
                                       * specified on command-line. */
@@ -238,12 +244,14 @@ queueid_t nb_hairpinq; /**< Number of hairpin queues per port. */
 queueid_t nb_rxq = 1; /**< Number of RX queues per port. */
 queueid_t nb_txq = 1; /**< Number of TX queues per port. */
 
+// zhou: queue descriptor 0 means use driver's default value.
 /*
  * Configurable number of RX/TX ring descriptors.
  * Defaults are supplied by drivers via ethdev.
  */
 #define RTE_TEST_RX_DESC_DEFAULT 0
 #define RTE_TEST_TX_DESC_DEFAULT 0
+// zhou:
 uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT; /**< Number of RX descriptors. */
 uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT; /**< Number of TX descriptors. */
 
@@ -478,6 +486,7 @@ lcoreid_t bitrate_lcore_id;
 uint8_t bitrate_enabled;
 #endif
 
+// zhou: used to control GRO, same as GSO.
 struct gro_status gro_ports[RTE_MAX_ETHPORTS];
 uint8_t gro_flush_cycles = GRO_DEFAULT_FLUSH_CYCLES;
 
@@ -499,6 +508,7 @@ static void dev_event_callback(const char *device_name,
  */
 static int all_ports_started(void);
 
+// zhou: used to control GSO, same as GRO.
 struct gso_status gso_ports[RTE_MAX_ETHPORTS];
 uint16_t gso_max_segment_size = RTE_ETHER_MAX_LEN - RTE_ETHER_CRC_LEN;
 
@@ -532,24 +542,33 @@ set_default_fwd_lcores_config(void)
 	for (i = 0; i < RTE_MAX_LCORE; i++) {
 		if (!rte_lcore_is_enabled(i))
 			continue;
+
 		sock_num = rte_lcore_to_socket_id(i);
+
 		if (new_socket_id(sock_num)) {
 			if (num_sockets >= RTE_MAX_NUMA_NODES) {
 				rte_exit(EXIT_FAILURE,
 					 "Total sockets greater than %u\n",
 					 RTE_MAX_NUMA_NODES);
 			}
+
 			socket_ids[num_sockets++] = sock_num;
 		}
+
 		if (i == rte_get_master_lcore())
 			continue;
+
 		fwd_lcores_cpuids[nb_lc++] = i;
 	}
+
 	nb_lcores = (lcoreid_t) nb_lc;
 	nb_cfg_lcores = nb_lcores;
+
+    // zhou:
 	nb_fwd_lcores = 1;
 }
 
+// zhou: define MAC address.
 static void
 set_def_peer_eth_addrs(void)
 {
@@ -760,6 +779,7 @@ fail:
 	return -1;
 }
 
+// zhou: README, use external allocated memory.
 static int
 setup_extmem(uint32_t nb_mbufs, uint32_t mbuf_sz, bool huge)
 {
@@ -865,6 +885,7 @@ dma_map_cb(struct rte_mempool *mp __rte_unused, void *opaque __rte_unused,
 	}
 }
 
+// zhou: README, how to choose them in different scenario.
 /*
  * Configuration initialisation done once at init time.
  */
@@ -889,6 +910,7 @@ mbuf_pool_create(uint16_t mbuf_seg_size, unsigned nb_mbuf,
 			/* wrapper to rte_mempool_create() */
 			TESTPMD_LOG(INFO, "preferred mempool ops selected: %s\n",
 					rte_mbuf_best_mempool_ops());
+
 			rte_mp = rte_pktmbuf_pool_create(pool_name, nb_mbuf,
 				mb_mempool_cache, 0, mbuf_seg_size, socket_id);
 			break;
@@ -1156,7 +1178,9 @@ init_config(void)
 	}
 
 	RTE_ETH_FOREACH_DEV(pid) {
+
 		port = &ports[pid];
+
 		/* Apply default TxRx configuration for all ports */
 		port->dev_conf.txmode = tx_mode;
 		port->dev_conf.rxmode = rx_mode;
@@ -1242,6 +1266,7 @@ init_config(void)
 	if (numa_support) {
 		uint8_t i;
 
+        // zhou: create one mbuf pool for each socket.
 		for (i = 0; i < num_sockets; i++)
 			mempools[i] = mbuf_pool_create(mbuf_data_size,
 						       nb_mbuf_per_pool,
@@ -1257,10 +1282,13 @@ init_config(void)
 							 socket_num);
 	}
 
+    // zhou:
 	init_port_config();
 
+    // zhou: configurate GSO
 	gso_types = DEV_TX_OFFLOAD_TCP_TSO | DEV_TX_OFFLOAD_VXLAN_TNL_TSO |
 		DEV_TX_OFFLOAD_GRE_TNL_TSO | DEV_TX_OFFLOAD_UDP_TSO;
+
 	/*
 	 * Records which Mbuf pool to use by each logical core, if needed.
 	 */
@@ -1270,6 +1298,8 @@ init_config(void)
 
 		if (mbp == NULL)
 			mbp = mbuf_pool_find(0);
+
+
 		fwd_lcores[lc_id]->mbp = mbp;
 		/* initialize GSO context */
 		fwd_lcores[lc_id]->gso_ctx.direct_pool = mbp;
@@ -1286,6 +1316,7 @@ init_config(void)
 
 	fwd_config_setup();
 
+    // zhou: GRO only applicable for TCP
 	/* create a gro context for each lcore */
 	gro_param.gro_types = RTE_GRO_TCP_IPV4;
 	gro_param.max_flow_num = GRO_MAX_FLUSH_CYCLES;
@@ -1336,7 +1367,7 @@ reconfig(portid_t new_port_id, unsigned socket_id)
 	init_port_config();
 }
 
-
+// zhou: README,
 int
 init_fwd_streams(void)
 {
@@ -1782,6 +1813,7 @@ flush_fwd_rx_queues(void)
 	}
 }
 
+// zhou:
 static void
 run_pkt_fwd_on_lcore(struct fwd_lcore *fc, packet_fwd_t pkt_fwd)
 {
@@ -1800,9 +1832,12 @@ run_pkt_fwd_on_lcore(struct fwd_lcore *fc, packet_fwd_t pkt_fwd)
 #endif
 	fsm = &fwd_streams[fc->stream_idx];
 	nb_fs = fc->stream_nb;
+
 	do {
+
 		for (sm_id = 0; sm_id < nb_fs; sm_id++)
 			(*pkt_fwd)(fsm[sm_id]);
+
 #ifdef RTE_LIBRTE_BITRATE
 		if (bitrate_enabled != 0 &&
 				bitrate_lcore_id == rte_lcore_id()) {
@@ -1816,6 +1851,7 @@ run_pkt_fwd_on_lcore(struct fwd_lcore *fc, packet_fwd_t pkt_fwd)
 			}
 		}
 #endif
+
 #ifdef RTE_LIBRTE_LATENCY_STATS
 		if (latencystats_enabled != 0 &&
 				latencystats_lcore_id == rte_lcore_id())
@@ -1825,6 +1861,7 @@ run_pkt_fwd_on_lcore(struct fwd_lcore *fc, packet_fwd_t pkt_fwd)
 	} while (! fc->stopped);
 }
 
+// zhou: use engine as customer define in cli.
 static int
 start_pkt_forward_on_core(void *fwd_arg)
 {
@@ -1837,6 +1874,8 @@ start_pkt_forward_on_core(void *fwd_arg)
  * Run the TXONLY packet forwarding engine to send a single burst of packets.
  * Used to start communication flows in network loopback test configurations.
  */
+// zhou: handle "tx-first", in the way just use "tx-only" engine for a short
+//       while.
 static int
 run_one_txonly_burst_on_core(void *fwd_arg)
 {
@@ -1846,7 +1885,9 @@ run_one_txonly_burst_on_core(void *fwd_arg)
 	fwd_lc = (struct fwd_lcore *) fwd_arg;
 	tmp_lcore = *fwd_lc;
 	tmp_lcore.stopped = 1;
+
 	run_pkt_fwd_on_lcore(&tmp_lcore, tx_only_engine.packet_fwd);
+
 	return 0;
 }
 
@@ -1855,6 +1896,7 @@ run_one_txonly_burst_on_core(void *fwd_arg)
  *     - Setup per-port forwarding context.
  *     - launch logical cores with their forwarding configuration.
  */
+// zhou: launch forward engine, includes "io", "rxonly", "txonly", ...
 static void
 launch_packet_forwarding(lcore_function_t *pkt_fwd_on_lcore)
 {
@@ -1864,14 +1906,19 @@ launch_packet_forwarding(lcore_function_t *pkt_fwd_on_lcore)
 	int diag;
 
 	port_fwd_begin = cur_fwd_config.fwd_eng->port_fwd_begin;
+
 	if (port_fwd_begin != NULL) {
 		for (i = 0; i < cur_fwd_config.nb_fwd_ports; i++)
 			(*port_fwd_begin)(fwd_ports_ids[i]);
 	}
+
 	for (i = 0; i < cur_fwd_config.nb_fwd_lcores; i++) {
+
 		lc_id = fwd_lcores_cpuids[i];
+
 		if ((interactive == 0) || (lc_id != rte_lcore_id())) {
 			fwd_lcores[i]->stopped = 0;
+            // zhou:
 			diag = rte_eal_remote_launch(pkt_fwd_on_lcore,
 						     fwd_lcores[i], lc_id);
 			if (diag != 0)
@@ -1884,6 +1931,7 @@ launch_packet_forwarding(lcore_function_t *pkt_fwd_on_lcore)
 /*
  * Launch packet forwarding configuration.
  */
+// zhou: README,
 void
 start_packet_forwarding(int with_tx_first)
 {
@@ -1948,23 +1996,33 @@ start_packet_forwarding(int with_tx_first)
 		port = &ports[pt_id];
 		map_port_queue_stats_mapping_registers(pt_id, port);
 	}
+
+    // zhou: "--tx-first"
 	if (with_tx_first) {
+        // zhou: "tx_only_begin()", used prepare packet
 		port_fwd_begin = tx_only_engine.port_fwd_begin;
 		if (port_fwd_begin != NULL) {
 			for (i = 0; i < cur_fwd_config.nb_fwd_ports; i++)
 				(*port_fwd_begin)(fwd_ports_ids[i]);
 		}
+
+        // zhou: running fwd engine "txonly"
 		while (with_tx_first--) {
 			launch_packet_forwarding(
 					run_one_txonly_burst_on_core);
+
+            // zhou: block here waiting.
 			rte_eal_mp_wait_lcore();
 		}
+
 		port_fwd_end = tx_only_engine.port_fwd_end;
 		if (port_fwd_end != NULL) {
 			for (i = 0; i < cur_fwd_config.nb_fwd_ports; i++)
 				(*port_fwd_end)(fwd_ports_ids[i]);
 		}
 	}
+
+    // zhou: running fwd engine "io"
 	launch_packet_forwarding(start_pkt_forward_on_core);
 }
 
@@ -1980,11 +2038,16 @@ stop_packet_forwarding(void)
 		printf("Packet forwarding not started\n");
 		return;
 	}
+
 	printf("Telling cores to stop...");
 	for (lc_id = 0; lc_id < cur_fwd_config.nb_fwd_lcores; lc_id++)
 		fwd_lcores[lc_id]->stopped = 1;
+
+
 	printf("\nWaiting for lcores to finish...\n");
 	rte_eal_mp_wait_lcore();
+
+
 	port_fwd_end = cur_fwd_config.fwd_eng->port_fwd_end;
 	if (port_fwd_end != NULL) {
 		for (i = 0; i < cur_fwd_config.nb_fwd_ports; i++) {
@@ -1999,6 +2062,7 @@ stop_packet_forwarding(void)
 	test_done = 1;
 }
 
+// zhou: Not supported by ixgbevf.
 void
 dev_set_link_up(portid_t pid)
 {
@@ -2124,6 +2188,8 @@ setup_hairpin_queues(portid_t pi)
 	return 0;
 }
 
+
+// zhou: README,
 int
 start_port(portid_t pid)
 {
@@ -2134,11 +2200,13 @@ start_port(portid_t pid)
 	struct rte_ether_addr mac_addr;
 	struct rte_eth_hairpin_cap cap;
 
+    // zhou: make sure the port is owned by this instance.
 	if (port_id_is_invalid(pid, ENABLED_WARN))
 		return 0;
 
 	if(dcb_config)
 		dcb_test = 1;
+
 	RTE_ETH_FOREACH_DEV(pi) {
 		if (pid != pi && pid != (portid_t)RTE_PORT_ALL)
 			continue;
@@ -2154,6 +2222,7 @@ start_port(portid_t pid)
 		if (port->need_reconfig > 0) {
 			port->need_reconfig = 0;
 
+            // zhou: README,
 			if (flow_isolate_all) {
 				int ret = port_flow_isolate(pi, 1);
 				if (ret) {
@@ -2162,6 +2231,8 @@ start_port(portid_t pid)
 					return -1;
 				}
 			}
+
+            // zhou: enable packets dump.
 			configure_rxtx_dump_callbacks(0);
 			printf("Configuring Port %d (socket %u)\n", pi,
 					port->socket_id);
@@ -2180,23 +2251,30 @@ start_port(portid_t pid)
 				RTE_PORT_HANDLING, RTE_PORT_STOPPED) == 0)
 					printf("Port %d can not be set back "
 							"to stopped\n", pi);
+
 				printf("Fail to configure port %d\n", pi);
+
 				/* try to reconfigure port next time */
 				port->need_reconfig = 1;
+
 				return -1;
 			}
 		}
+
 		if (port->need_reconfig_queues > 0) {
+
 			port->need_reconfig_queues = 0;
 			/* setup tx queues */
 			for (qi = 0; qi < nb_txq; qi++) {
 				if ((numa_support) &&
 					(txring_numa[pi] != NUMA_NO_CONFIG))
+                    // zhou: NUMA enabled
 					diag = rte_eth_tx_queue_setup(pi, qi,
 						port->nb_tx_desc[qi],
 						txring_numa[pi],
 						&(port->tx_conf[qi]));
 				else
+                    // zhou: NUMA disabled
 					diag = rte_eth_tx_queue_setup(pi, qi,
 						port->nb_tx_desc[qi],
 						port->socket_id,
@@ -2217,6 +2295,7 @@ start_port(portid_t pid)
 				port->need_reconfig_queues = 1;
 				return -1;
 			}
+
 			for (qi = 0; qi < nb_rxq; qi++) {
 				/* setup rx queues */
 				if ((numa_support) &&
@@ -2271,6 +2350,7 @@ start_port(portid_t pid)
 			if (setup_hairpin_queues(pi) != 0)
 				return -1;
 		}
+
 		configure_rxtx_dump_callbacks(verbose_level);
 		if (clear_ptypes) {
 			diag = rte_eth_dev_set_ptypes(pi, RTE_PTYPE_UNKNOWN,
@@ -2714,6 +2794,8 @@ struct pmd_test_command {
 
 #define PMD_TEST_CMD_NB (sizeof(pmd_test_menu) / sizeof(pmd_test_menu[0]))
 
+
+// zhou: block with timeout to show port state.
 /* Check the link status of all ports in up to 9s, and print them finally */
 static void
 check_all_ports_link_status(uint32_t port_mask)
@@ -2960,6 +3042,7 @@ set_rx_queue_stats_mapping_registers(portid_t port_id, struct rte_port *port)
 	return 0;
 }
 
+// zhou: setting stats collection
 static void
 map_port_queue_stats_mapping_registers(portid_t pi, struct rte_port *port)
 {
@@ -2992,6 +3075,8 @@ map_port_queue_stats_mapping_registers(portid_t pi, struct rte_port *port)
 	}
 }
 
+
+
 static void
 rxtx_port_config(struct rte_port *port)
 {
@@ -3000,6 +3085,7 @@ rxtx_port_config(struct rte_port *port)
 
 	for (qid = 0; qid < nb_rxq; qid++) {
 		offloads = port->rx_conf[qid].offloads;
+        // zhou: copy default configure from "struct rte_eth_dev_info"
 		port->rx_conf[qid] = port->dev_info.default_rxconf;
 		if (offloads != 0)
 			port->rx_conf[qid].offloads = offloads;
@@ -3049,6 +3135,7 @@ rxtx_port_config(struct rte_port *port)
 	}
 }
 
+// zhou:
 void
 init_port_config(void)
 {
@@ -3080,13 +3167,16 @@ init_port_config(void)
 				port->dev_conf.rxmode.mq_mode = ETH_MQ_RX_NONE;
 		}
 
+        // zhou:
 		rxtx_port_config(port);
 
 		ret = eth_macaddr_get_print_err(pid, &port->eth_addr);
 		if (ret != 0)
 			return;
 
+        // zhou: setting stats collection
 		map_port_queue_stats_mapping_registers(pid, port);
+
 #if defined RTE_LIBRTE_IXGBE_PMD && defined RTE_LIBRTE_IXGBE_BYPASS
 		rte_pmd_ixgbe_bypass_init(pid);
 #endif
@@ -3136,6 +3226,7 @@ const uint16_t vlan_tags[] = {
 		24, 25, 26, 27, 28, 29, 30, 31
 };
 
+// zhou: README, how to use VMDq and DCB
 static  int
 get_eth_dcb_conf(portid_t pid, struct rte_eth_conf *eth_conf,
 		 enum dcb_mode_enable dcb_mode,
@@ -3305,6 +3396,7 @@ init_port(void)
 	ports = rte_zmalloc("testpmd: ports",
 			    sizeof(struct rte_port) * RTE_MAX_ETHPORTS,
 			    RTE_CACHE_LINE_SIZE);
+
 	if (ports == NULL) {
 		rte_exit(EXIT_FAILURE,
 				"rte_zmalloc(%d struct rte_port) failed\n",
@@ -3375,9 +3467,12 @@ main(int argc, char** argv)
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 
+    // zhou: get "logtype.log_id", and "logtype.logtype"=="testpmd"
 	testpmd_logtype = rte_log_register("testpmd");
 	if (testpmd_logtype < 0)
 		rte_exit(EXIT_FAILURE, "Cannot register log type");
+
+    // zhou: set log "testpmd" loglevel as this
 	rte_log_set_level(testpmd_logtype, RTE_LOG_DEBUG);
 
 	diag = rte_eal_init(argc, argv);
@@ -3398,11 +3493,13 @@ main(int argc, char** argv)
 	rte_pdump_init();
 #endif
 
+    // zhou: fetch all DPDK avaiable ports
 	count = 0;
 	RTE_ETH_FOREACH_DEV(port_id) {
 		ports_ids[count] = port_id;
 		count++;
 	}
+
 	nb_ports = (portid_t) count;
 	if (nb_ports == 0)
 		TESTPMD_LOG(WARNING, "No probed ethernet devices\n");
@@ -3411,6 +3508,7 @@ main(int argc, char** argv)
 	init_port();
 
 	set_def_fwd_config();
+
 	if (nb_lcores == 0)
 		rte_exit(EXIT_FAILURE, "No cores defined for forwarding\n"
 			 "Check the core mask argument\n");
@@ -3432,6 +3530,7 @@ main(int argc, char** argv)
 
 	argc -= diag;
 	argv += diag;
+
 	if (argc > 1)
 		launch_args_parse(argc, argv);
 
@@ -3458,8 +3557,10 @@ main(int argc, char** argv)
 		       "but nb_txq=%d will prevent to fully test it.\n",
 		       nb_rxq, nb_txq);
 
+    // zhou:
 	init_config();
 
+    // zhou: hot_plug
 	if (hot_plug) {
 		ret = rte_dev_hotplug_handle_enable();
 		if (ret) {

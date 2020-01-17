@@ -122,10 +122,12 @@ ixgbe_tx_free_bufs(struct ixgbe_tx_queue *txq)
 	txep = &(txq->sw_ring[txq->tx_next_dd - (txq->tx_rs_thresh - 1)]);
 
 	for (i = 0; i < txq->tx_rs_thresh; ++i, ++txep) {
+        // zhou: release them segment by segment !!!
 		/* free buffers one at a time */
 		m = rte_pktmbuf_prefree_seg(txep->mbuf);
 		txep->mbuf = NULL;
 
+        // zhou: can not free this segment right now.
 		if (unlikely(m == NULL))
 			continue;
 
@@ -240,6 +242,7 @@ tx_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	volatile union ixgbe_adv_tx_desc *tx_r = txq->tx_ring;
 	uint16_t n = 0;
 
+    // zhou: the free descriptor is less than threshold, need release to pool.
 	/*
 	 * Begin scanning the H/W ring for done descriptors when the
 	 * number of available descriptors drops below tx_free_thresh.  For
@@ -627,6 +630,7 @@ ixgbe_xmit_cleanup(struct ixgbe_tx_queue *txq)
 	return 0;
 }
 
+// zhou: README,
 uint16_t
 ixgbe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		uint16_t nb_pkts)
@@ -1736,6 +1740,10 @@ ixgbe_recv_pkts_bulk_alloc(void *rx_queue, struct rte_mbuf **rx_pkts,
 	return nb_rx;
 }
 
+// zhou: "The burst-oriented receive function does not provide any error notification,
+//       to avoid the corresponding overhead. As a hint, the upper-level application
+//       might check the status of the device link once being systematically returned
+//       a 0 value by the receive function of the driver for a given number of tries."
 uint16_t
 ixgbe_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts)
@@ -1813,6 +1821,7 @@ ixgbe_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 			   (unsigned) rte_le_to_cpu_16(rxd.wb.upper.length));
 
 		nmb = rte_mbuf_raw_alloc(rxq->mb_pool);
+        // zhou: no disaster will happen.
 		if (nmb == NULL) {
 			PMD_RX_LOG(DEBUG, "RX mbuf alloc failed port_id=%u "
 				   "queue_id=%u", (unsigned) rxq->port_id,
@@ -2314,6 +2323,7 @@ ixgbe_tx_free_swring(struct ixgbe_tx_queue *txq)
 		rte_free(txq->sw_ring);
 }
 
+// zhou: when TX queue stoped, all holded mbuf will be released.
 static void __attribute__((cold))
 ixgbe_tx_queue_release(struct ixgbe_tx_queue *txq)
 {
@@ -5379,6 +5389,7 @@ ixgbe_dev_tx_queue_start(struct rte_eth_dev *dev, uint16_t tx_queue_id)
 	return 0;
 }
 
+// zhou: stop sending, will release holded mbuf.
 /*
  * Stop Transmit Units for specified queue.
  */

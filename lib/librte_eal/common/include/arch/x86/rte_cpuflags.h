@@ -9,6 +9,7 @@
 extern "C" {
 #endif
 
+// zhou: x86 (IA32/IA64) CPU feature set.
 enum rte_cpu_flag_t {
 	/* (EAX 01h) ECX features*/
 	RTE_CPUFLAG_SSE3 = 0,               /**< SSE3 */

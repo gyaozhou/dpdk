@@ -228,11 +228,15 @@ struct e1000_dev_spec_vf {
 	u32 v2p_mailbox;
 };
 
+// zhou: hardware related info, fetched by probe.
 struct e1000_hw {
 	void *back;
 
+    // zhou: BAR0 address
 	u8 *hw_addr;
+    // zhou: it should be BAR1 address, but it's optional.
 	u8 *flash_address;
+    // zhou: it should be BAR2 address, but it's optional???
 	unsigned long io_base;
 
 	struct e1000_mac_info  mac;

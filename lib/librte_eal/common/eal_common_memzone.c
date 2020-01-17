@@ -52,6 +52,7 @@ memzone_lookup_thread_unsafe(const char *name)
 	return NULL;
 }
 
+// zhou: README,
 static const struct rte_memzone *
 memzone_reserve_aligned_thread_unsafe(const char *name, size_t len,
 		int socket_id, unsigned int flags, unsigned int align,
@@ -184,6 +185,7 @@ memzone_reserve_aligned_thread_unsafe(const char *name, size_t len,
 	return mz;
 }
 
+// zhou:
 static const struct rte_memzone *
 rte_memzone_reserve_thread_safe(const char *name, size_t len, int socket_id,
 		unsigned int flags, unsigned int align, unsigned int bound)
@@ -229,6 +231,7 @@ rte_memzone_reserve_aligned(const char *name, size_t len, int socket_id,
 					       align, 0);
 }
 
+// zhou: README,
 /*
  * Return a pointer to a correctly filled memzone descriptor. If the
  * allocation cannot be done, return NULL.
@@ -357,6 +360,28 @@ rte_memzone_dump(FILE *f)
 {
 	rte_memzone_walk(dump_memzone, f);
 }
+
+// zhou: README,
+//       "As physical memory can have gaps, the memory is described in a table of
+//       descriptors, and each descriptor (called rte_memseg ) describes a physical
+//       page."
+//
+//       "On top of this, the memzone allocator’s role is to reserve contiguous
+//       portions of physical memory. These zones are identified by a unique name
+//       when the memory is reserved."
+//
+//       "The rte_memzone descriptors are also located in the configuration
+//       structure. This structure is accessed using rte_eal_get_configuration().
+//       The lookup (by name) of a memory zone returns a descriptor containing the
+//       physical address of the memory zone.
+//
+//       "Memory zones can be reserved with specific start address alignment by
+//       supplying the align parameter (by default, they are aligned to cache line
+//       size). The alignment value should be a power of two and not less than the
+//       cache line size (64 bytes). Memory zones can also be reserved from either
+//       2 MB or 1 GB hugepages, provided that both are available on the system."
+//
+//       "Both memsegs and memzones are stored using rte_fbarray structures. "
 
 /*
  * Init the memzone subsystem

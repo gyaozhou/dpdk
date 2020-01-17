@@ -837,6 +837,7 @@ vhost_user_socket_mem_free(struct vhost_user_socket *vsocket)
 	}
 }
 
+// zhou: README,
 /*
  * Register a new vhost-user socket; here we could act as server
  * (the default case), or client (when RTE_VHOST_USER_CLIENT) flag

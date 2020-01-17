@@ -26,11 +26,17 @@ static uint64_t eal_tsc_resolution_hz;
 /* Pointer to user delay function */
 void (*rte_delay_us)(unsigned int) = NULL;
 
+// zhou: rte_delay_us(),
+//       < 100us, just avoid context switch and save power.
+//       100 ~ 999us, make core to enter C1 state, while keeping a fast response
+//                    time in case new traffic arriaves.
+//       > 999us, allows the core to enter the C3/C6 state.
 void
 rte_delay_us_block(unsigned int us)
 {
 	const uint64_t start = rte_get_timer_cycles();
 	const uint64_t ticks = (uint64_t)us * rte_get_timer_hz() / 1E6;
+
 	while ((rte_get_timer_cycles() - start) < ticks)
 		rte_pause();
 }
@@ -109,6 +115,7 @@ void rte_delay_us_callback_register(void (*userfunc)(unsigned int))
 	rte_delay_us = userfunc;
 }
 
+// zhou: rte_delay_us() == rte_delay_us_block
 RTE_INIT(rte_timer_init)
 {
 	/* set rte_delay_us_block as a delay function */

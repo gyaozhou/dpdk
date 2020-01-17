@@ -36,6 +36,7 @@ rte_ip_frag_free_death_row(struct rte_ip_frag_death_row *dr,
 	dr->cnt = 0;
 }
 
+// zhou: used in reassembly to collect received IP fragments.
 /* create fragmentation table */
 struct rte_ip_frag_tbl *
 rte_ip_frag_table_create(uint32_t bucket_num, uint32_t bucket_entries,
@@ -47,6 +48,7 @@ rte_ip_frag_table_create(uint32_t bucket_num, uint32_t bucket_entries,
 
 	nb_entries = rte_align32pow2(bucket_num);
 	nb_entries *= bucket_entries;
+    // zhou: collision solution, to hold two collision entreis..
 	nb_entries *= IP_FRAG_HASH_FNUM;
 
 	/* check input parameters. */
@@ -57,6 +59,7 @@ rte_ip_frag_table_create(uint32_t bucket_num, uint32_t bucket_entries,
 		return NULL;
 	}
 
+    // zhou: table and entries memory, NOT includes IP Fragment Packets.
 	sz = sizeof (*tbl) + nb_entries * sizeof (tbl->pkt[0]);
 	if ((tbl = rte_zmalloc_socket(__func__, sz, RTE_CACHE_LINE_SIZE,
 			socket_id)) == NULL) {
@@ -74,9 +77,12 @@ rte_ip_frag_table_create(uint32_t bucket_num, uint32_t bucket_entries,
 	tbl->nb_entries = (uint32_t)nb_entries;
 	tbl->nb_buckets = bucket_num;
 	tbl->bucket_entries = bucket_entries;
+
+    // zhou:
 	tbl->entry_mask = (tbl->nb_entries - 1) & ~(tbl->bucket_entries  - 1);
 
 	TAILQ_INIT(&(tbl->lru));
+
 	return tbl;
 }
 

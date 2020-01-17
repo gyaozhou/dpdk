@@ -61,6 +61,10 @@ rte_malloc_socket(const char *type, size_t size, unsigned int align,
 			align == 0 ? 1 : align, 0, false);
 }
 
+// zhou: "Typically, these kinds of allocations should not be done in data plane
+//        processing because they are slower than pool-based allocation and make
+//        use of locks within the allocation and free paths"
+
 /*
  * Allocate memory on default heap.
  */
@@ -351,6 +355,7 @@ find_named_heap(const char *name)
 	return NULL;
 }
 
+// zhou: README,
 int
 rte_malloc_heap_memory_add(const char *heap_name, void *va_addr, size_t len,
 		rte_iova_t iova_addrs[], unsigned int n_pages, size_t page_sz)

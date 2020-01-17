@@ -15,6 +15,8 @@
 extern "C" {
 #endif
 
+// zhou: New Create -> WAIT -> rte_eal_remote_launch() -> RUNNING ->
+//       main loop exit -> FINISHED -> rte_eal_wait_lcore() -> WAIT
 /**
  * State of an lcore.
  */

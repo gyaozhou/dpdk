@@ -35,12 +35,15 @@ static struct rte_bus rte_vdev_bus;
 /** Double linked list of virtual device drivers. */
 TAILQ_HEAD(vdev_device_list, rte_vdev_device);
 
+// zhou: all scaned devices
 static struct vdev_device_list vdev_device_list =
 	TAILQ_HEAD_INITIALIZER(vdev_device_list);
+
 /* The lock needs to be recursive because a vdev can manage another vdev. */
 static rte_spinlock_recursive_t vdev_device_list_lock =
 	RTE_SPINLOCK_RECURSIVE_INITIALIZER;
 
+// zhou: all registered vdev drivers.
 static struct vdev_driver_list vdev_driver_list =
 	TAILQ_HEAD_INITIALIZER(vdev_driver_list);
 
@@ -54,6 +57,7 @@ static struct vdev_custom_scans vdev_custom_scans =
 	TAILQ_HEAD_INITIALIZER(vdev_custom_scans);
 static rte_spinlock_t vdev_custom_scan_lock = RTE_SPINLOCK_INITIALIZER;
 
+// zhou: register a vdev driver.
 /* register a driver */
 void
 rte_vdev_register(struct rte_vdev_driver *driver)
@@ -136,6 +140,7 @@ vdev_parse(const char *name, void *addr)
 	return driver == NULL;
 }
 
+// zhou: go throught all registered driver's probe function.
 static int
 vdev_probe_all_drivers(struct rte_vdev_device *dev)
 {
@@ -151,6 +156,7 @@ vdev_probe_all_drivers(struct rte_vdev_device *dev)
 
 	if (vdev_parse(name, &driver))
 		return -1;
+    // zhou: invoke such as virtio_user_pmd_probe()
 	ret = driver->probe(dev);
 	if (ret == 0)
 		dev->device.driver = &driver->driver;
@@ -254,6 +260,7 @@ fail:
 	return ret;
 }
 
+// zhou: for vdev not specified in cli, such as bond?
 int
 rte_vdev_init(const char *name, const char *args)
 {
@@ -400,6 +407,9 @@ vdev_action(const struct rte_mp_msg *mp_msg, const void *peer)
 	return 0;
 }
 
+// zhou: invoked by "rte_bus_scan()" to detect all devices and vdev assgined to
+//       this DPDK instance.
+//       Updated "vdev_device_list".
 static int
 vdev_scan(void)
 {
@@ -484,6 +494,7 @@ scan:
 	return 0;
 }
 
+// zhou: used by "rte_bus_probe()" which scan all buses.
 static int
 vdev_probe(void)
 {
@@ -497,6 +508,7 @@ vdev_probe(void)
 		 * we call each driver probe.
 		 */
 
+        // zhou: go throught all registered driver's probe function.
 		r = vdev_probe_all_drivers(dev);
 		if (r != 0) {
 			if (r == -EEXIST)
@@ -556,6 +568,7 @@ static struct rte_bus rte_vdev_bus = {
 	.dev_iterate = rte_vdev_dev_iterate,
 };
 
+// zhou: register vdev bus
 RTE_REGISTER_BUS(vdev, rte_vdev_bus);
 
 RTE_INIT(vdev_init_log)

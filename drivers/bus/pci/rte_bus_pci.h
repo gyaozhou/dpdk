@@ -42,10 +42,12 @@ TAILQ_HEAD(rte_pci_device_list, rte_pci_device);
 /** List of PCI drivers */
 TAILQ_HEAD(rte_pci_driver_list, rte_pci_driver);
 
+// zhou: all detected PCI device in "/sys/bus/pci/devices/..."
 /* PCI Bus iterators */
 #define FOREACH_DEVICE_ON_PCIBUS(p)	\
 		TAILQ_FOREACH(p, &(rte_pci_bus.device_list), next)
 
+// zhou: all registered User Space PCI device driver
 #define FOREACH_DRIVER_ON_PCIBUS(p)	\
 		TAILQ_FOREACH(p, &(rte_pci_bus.driver_list), next)
 
@@ -54,17 +56,26 @@ struct rte_devargs;
 /**
  * A structure describing a PCI device.
  */
+// zhou: all these data get by parsing "/sys/bus/pci/device/*"
 struct rte_pci_device {
 	TAILQ_ENTRY(rte_pci_device) next;   /**< Next probed PCI device. */
+
 	struct rte_device device;           /**< Inherit core device */
+
 	struct rte_pci_addr addr;           /**< PCI location. */
+    // zhou: vendor/device/...
 	struct rte_pci_id id;               /**< PCI ID. */
+
 	struct rte_mem_resource mem_resource[PCI_MAX_RESOURCE];
 					    /**< PCI Memory Resource */
+
 	struct rte_intr_handle intr_handle; /**< Interrupt handle */
+
 	struct rte_pci_driver *driver;      /**< PCI driver used in probing */
+
 	uint16_t max_vfs;                   /**< sriov enable if not zero */
 	enum rte_kernel_driver kdrv;        /**< Kernel driver passthrough */
+
 	char name[PCI_PRI_STR_SIZE+1];      /**< PCI location (ASCII) */
 	struct rte_intr_handle vfio_req_intr_handle;
 				/**< Handler of VFIO request interrupt */
@@ -170,8 +181,12 @@ struct rte_pci_driver {
  * Structure describing the PCI bus
  */
 struct rte_pci_bus {
+    // zhou: each kind of bus should include super class.
 	struct rte_bus bus;               /**< Inherit the generic class */
+
+    // zhou: all detected device according to drivers below.
 	struct rte_pci_device_list device_list;  /**< List of PCI devices */
+    // zhou: all registered PCI ether deivce driver.
 	struct rte_pci_driver_list driver_list;  /**< List of PCI drivers */
 };
 
@@ -233,6 +248,7 @@ void rte_pci_dump(FILE *f);
  */
 void rte_pci_register(struct rte_pci_driver *driver);
 
+// zhou: e.g. ixgbe
 /** Helper for PCI device registration from driver (eth, crypto) instance */
 #define RTE_PMD_REGISTER_PCI(nm, pci_drv) \
 RTE_INIT(pciinitfn_ ##nm) \

@@ -45,10 +45,13 @@ uint32_t dflt_carrier;
 
 static int kni_net_id;
 
+// zhou: /dev/kni
 struct kni_net {
 	unsigned long device_in_use; /* device in use flag */
 	struct mutex kni_kthread_lock;
+
 	struct task_struct *kni_kthread;
+
 	struct rw_semaphore kni_list_lock;
 	struct list_head kni_list_head;
 };
@@ -123,11 +126,13 @@ kni_thread_single(void *data)
 		down_read(&knet->kni_list_lock);
 		for (j = 0; j < KNI_RX_LOOP_NUM; j++) {
 			list_for_each_entry(dev, &knet->kni_list_head, list) {
+                // zhou: handle packets from PMD
 				kni_net_rx(dev);
 				kni_net_poll_resp(dev);
 			}
 		}
 		up_read(&knet->kni_list_lock);
+
 #ifdef RTE_KNI_PREEMPT_DEFAULT
 		/* reschedule out for a while */
 		schedule_timeout_interruptible(
@@ -245,6 +250,7 @@ kni_check_param(struct kni_dev *kni, struct rte_kni_device_info *dev)
 	return 0;
 }
 
+// zhou:
 static int
 kni_run_thread(struct kni_net *knet, struct kni_dev *kni, uint8_t force_bind)
 {
@@ -253,8 +259,10 @@ kni_run_thread(struct kni_net *knet, struct kni_dev *kni, uint8_t force_bind)
 	 * and finally wake it up.
 	 */
 	if (multiple_kthread_on) {
+        // zhou: in this mode, each KNI vEth will create a kernel thead.
 		kni->pthread = kthread_create(kni_thread_multiple,
 			(void *)kni, "kni_%s", kni->name);
+
 		if (IS_ERR(kni->pthread)) {
 			kni_dev_remove(kni);
 			return -ECANCELED;
@@ -262,10 +270,13 @@ kni_run_thread(struct kni_net *knet, struct kni_dev *kni, uint8_t force_bind)
 
 		if (force_bind)
 			kthread_bind(kni->pthread, kni->core_id);
+
 		wake_up_process(kni->pthread);
+
 	} else {
 		mutex_lock(&knet->kni_kthread_lock);
 
+        // zhou: only the first KNI vEth will create a kernel thread.
 		if (knet->kni_kthread == NULL) {
 			knet->kni_kthread = kthread_create(kni_thread_single,
 				(void *)knet, "kni_single");
@@ -277,6 +288,7 @@ kni_run_thread(struct kni_net *knet, struct kni_dev *kni, uint8_t force_bind)
 
 			if (force_bind)
 				kthread_bind(knet->kni_kthread, kni->core_id);
+
 			wake_up_process(knet->kni_kthread);
 		}
 
@@ -286,6 +298,16 @@ kni_run_thread(struct kni_net *knet, struct kni_dev *kni, uint8_t force_bind)
 	return 0;
 }
 
+// zhou: KNI device will create a vEth ("struct net_device") triggered by DPDK
+//       ioctl().
+//       kni_misc.c (KNI device), just like xxx_probe() in normal ethernet device
+//       driver, will create "net_device".
+//       Similar with virtio, frontend driver running in VM, and backend driver running
+//       in BM.
+//       kni_net.c works as frontend driver, DPDK works as backend driver.
+//       They communicate with each other via FIFO.
+//       But frontend driver here doesn't implement a lot ethtool supports, so using
+//       igb and ixgbe ethtool implementation.
 static int
 kni_ioctl_create(struct net *net, uint32_t ioctl_num,
 		unsigned long ioctl_param)
@@ -301,6 +323,7 @@ kni_ioctl_create(struct net *net, uint32_t ioctl_num,
 	if (_IOC_SIZE(ioctl_num) > sizeof(dev_info))
 		return -EINVAL;
 
+    //zhou: lots of things are passed by application, refer to structure.
 	/* Copy kni info from user space */
 	if (copy_from_user(&dev_info, (void *)ioctl_param, sizeof(dev_info)))
 		return -EFAULT;
@@ -329,7 +352,12 @@ kni_ioctl_create(struct net *net, uint32_t ioctl_num,
 	}
 	up_read(&knet->kni_list_lock);
 
+    // zhou: setup network device according to name provided by application.
+    //       The hook function is specified by "kni_net_init". name: "vEth%u".
+    //       "alloc_netdev()" == "alloc_etherdev_mq()", used in ethernet driver
+    //       probing.
 	net_dev = alloc_netdev(sizeof(struct kni_dev), dev_info.name,
+
 #ifdef NET_NAME_USER
 							NET_NAME_USER,
 #endif
@@ -343,6 +371,8 @@ kni_ioctl_create(struct net *net, uint32_t ioctl_num,
 
 	kni = netdev_priv(net_dev);
 
+    // zhou: all of these information, help network device setup correct channel to
+    //       communicate with PMD driver.
 	kni->net_dev = net_dev;
 	kni->core_id = dev_info.core_id;
 	strncpy(kni->name, dev_info.name, RTE_KNI_NAMESIZE);
@@ -429,6 +459,7 @@ kni_ioctl_create(struct net *net, uint32_t ioctl_num,
 
 	netif_carrier_off(net_dev);
 
+    // zhou: attach or create a kernel thead.
 	ret = kni_run_thread(knet, kni, dev_info.force_bind);
 	if (ret != 0)
 		return ret;
@@ -534,6 +565,7 @@ static struct miscdevice kni_misc = {
 	.fops = &kni_fops,
 };
 
+// zhou: the kernel module parameter will be used to set mode.
 static int __init
 kni_parse_kthread_mode(void)
 {

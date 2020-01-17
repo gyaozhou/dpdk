@@ -82,16 +82,19 @@ rte_mbuf_user_mempool_ops(void)
 const char *
 rte_mbuf_best_mempool_ops(void)
 {
+    // zhou: first check Cli "OPT_MBUF_POOL_OPS_NAME".
 	/* User defined mempool ops takes the priority */
 	const char *best_ops = rte_mbuf_user_mempool_ops();
 	if (best_ops)
 		return best_ops;
 
+    // zhou: README,
 	/* Next choice is platform configured mempool ops */
 	best_ops = rte_mbuf_platform_mempool_ops();
 	if (best_ops)
 		return best_ops;
 
+    // zhou: "ring_mp_mc", default method to manage mempool objects.
 	/* Last choice is to use the compile time config pool */
 	return RTE_MBUF_DEFAULT_MEMPOOL_OPS;
 }

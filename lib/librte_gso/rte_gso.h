@@ -31,6 +31,7 @@ extern "C" {
  * 0 indicates using incremental IP ids.
  */
 
+// zhou: Generic Segment Offload
 /**
  * GSO context structure.
  */
@@ -39,16 +40,19 @@ struct rte_gso_ctx {
 	/**< MBUF pool for allocating direct buffers, which are used
 	 * to store packet headers for GSO segments.
 	 */
+
 	struct rte_mempool *indirect_pool;
 	/**< MBUF pool for allocating indirect buffers, which are used
 	 * to locate packet payloads for GSO segments. The indirect
 	 * buffer doesn't contain any data, but simply points to an
 	 * offset within the packet to segment.
 	 */
+
 	uint64_t flag;
 	/**< flag that controls specific attributes of output segments,
 	 * such as the type of IP ID generated (i.e. fixed or incremental).
 	 */
+
 	uint32_t gso_types;
 	/**< the bit mask of required GSO types. The GSO library
 	 * uses the same macros as that of describing device TX

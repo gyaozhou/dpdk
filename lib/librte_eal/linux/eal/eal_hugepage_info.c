@@ -64,6 +64,7 @@ open_shared_memory(const char *filename, const size_t mem_size)
 	return map_shared_memory(filename, mem_size, O_RDWR);
 }
 
+// zhou: "/var/run/dpdk/xxx/hugepage_info"
 static void *
 create_shared_memory(const char *filename, const size_t mem_size)
 {
@@ -130,6 +131,7 @@ get_num_hugepages(const char *subdir)
 	return num_pages;
 }
 
+// zhou: number of Hugepage in NUMA node
 static uint32_t
 get_num_hugepages_on_node(const char *subdir, unsigned int socket)
 {
@@ -169,6 +171,7 @@ get_num_hugepages_on_node(const char *subdir, unsigned int socket)
 	return num_pages;
 }
 
+// zhou: grep Hugepagesize /proc/meminfo, get default Hugepage size.
 static uint64_t
 get_default_hp_size(void)
 {
@@ -181,6 +184,7 @@ get_default_hp_size(void)
 	FILE *fd = fopen(proc_meminfo, "r");
 	if (fd == NULL)
 		rte_panic("Cannot open %s\n", proc_meminfo);
+
 	while(fgets(buffer, sizeof(buffer), fd)){
 		if (strncmp(buffer, str_hugepagesz, hugepagesz_len) == 0){
 			size = rte_str_to_size(&buffer[hugepagesz_len]);
@@ -188,11 +192,14 @@ get_default_hp_size(void)
 		}
 	}
 	fclose(fd);
+
 	if (size == 0)
 		rte_panic("Cannot get default hugepage size from %s\n", proc_meminfo);
+
 	return size;
 }
 
+// zhou: for each size Hugepage, find corresponding mount point in /proc/mounts.
 static int
 get_hugepage_dir(uint64_t hugepage_sz, char *hugedir, int len)
 {
@@ -218,6 +225,7 @@ get_hugepage_dir(uint64_t hugepage_sz, char *hugedir, int len)
 	if (fd == NULL)
 		rte_panic("Cannot open %s\n", proc_mounts);
 
+    // zhou: get from /proc/meminfo.
 	if (default_size == 0)
 		default_size = get_default_hp_size();
 
@@ -233,11 +241,15 @@ get_hugepage_dir(uint64_t hugepage_sz, char *hugedir, int len)
 				strcmp(splitstr[MOUNTPT], internal_config.hugepage_dir) != 0)
 			continue;
 
+        // zhou: find "hugetlbfs"
 		if (strncmp(splitstr[FSTYPE], hugetlbfs_str, htlbfs_str_len) == 0){
+
 			const char *pagesz_str = strstr(splitstr[OPTIONS], pagesize_opt);
 
+            // zhou: if no page size in mount info, then it's must be default size.
 			/* if no explicit page size, the default page size is compared */
 			if (pagesz_str == NULL){
+                // zhou: if what we found is same with default.
 				if (hugepage_sz == default_size){
 					strlcpy(hugedir, splitstr[MOUNTPT], len);
 					retval = 0;
@@ -247,6 +259,7 @@ get_hugepage_dir(uint64_t hugepage_sz, char *hugedir, int len)
 			/* there is an explicit page size, so check it */
 			else {
 				uint64_t pagesz = rte_str_to_size(&pagesz_str[pagesize_opt_len]);
+
 				if (pagesz == hugepage_sz) {
 					strlcpy(hugedir, splitstr[MOUNTPT], len);
 					retval = 0;
@@ -260,6 +273,7 @@ get_hugepage_dir(uint64_t hugepage_sz, char *hugedir, int len)
 	return retval;
 }
 
+// zhou: README, ???
 /*
  * Clear the hugepage directory of whatever hugepage files
  * there are. Checks if the file is locked (i.e.
@@ -337,6 +351,7 @@ compare_hpi(const void *a, const void *b)
 	return hpi_b->hugepage_sz - hpi_a->hugepage_sz;
 }
 
+// zhou: total Hugepage in all NUMA nodes.
 static void
 calc_num_pages(struct hugepage_info *hpi, struct dirent *dirent)
 {
@@ -351,7 +366,9 @@ calc_num_pages(struct hugepage_info *hpi, struct dirent *dirent)
 	total_pages = 0;
 	/* we also don't want to do this for legacy init */
 	if (!internal_config.legacy_mem)
+
 		for (i = 0; i < rte_socket_count(); i++) {
+
 			int socket = rte_socket_id_by_idx(i);
 			unsigned int num_pages =
 					get_num_hugepages_on_node(
@@ -375,6 +392,7 @@ calc_num_pages(struct hugepage_info *hpi, struct dirent *dirent)
 	}
 }
 
+// zhou: get OS Hugepage configuraiton.
 static int
 hugepage_info_init(void)
 {	const char dirent_start_text[] = "hugepages-";
@@ -383,6 +401,7 @@ hugepage_info_init(void)
 	DIR *dir;
 	struct dirent *dirent;
 
+    // zhou: "/sys/kernel/mm/hugepages"
 	dir = opendir(sys_dir_path);
 	if (dir == NULL) {
 		RTE_LOG(ERR, EAL,
@@ -391,13 +410,16 @@ hugepage_info_init(void)
 		return -1;
 	}
 
+    // zhou: go through all Hugepage Size.
 	for (dirent = readdir(dir); dirent != NULL; dirent = readdir(dir)) {
 		struct hugepage_info *hpi;
 
+        // zhou: only handle file like "/sys/kernel/mm/hugepages/hugepages-"
 		if (strncmp(dirent->d_name, dirent_start_text,
 			    dirent_start_len) != 0)
 			continue;
 
+        // zhou: DPDK only support 3 kinds Hugepage at most.
 		if (num_sizes >= MAX_HUGEPAGE_SIZES)
 			break;
 
@@ -405,18 +427,23 @@ hugepage_info_init(void)
 		hpi->hugepage_sz =
 			rte_str_to_size(&dirent->d_name[dirent_start_len]);
 
+
+        // zhou: file "internal_config.hugepage_info[]".
 		/* first, check if we have a mountpoint */
 		if (get_hugepage_dir(hpi->hugepage_sz,
 			hpi->hugedir, sizeof(hpi->hugedir)) < 0) {
+
 			uint32_t num_pages;
 
 			num_pages = get_num_hugepages(dirent->d_name);
+
 			if (num_pages > 0)
 				RTE_LOG(NOTICE, EAL,
 					"%" PRIu32 " hugepages of size "
 					"%" PRIu64 " reserved, but no mounted "
 					"hugetlbfs found for that size\n",
 					num_pages, hpi->hugepage_sz);
+
 			/* if we have kernel support for reserving hugepages
 			 * through mmap, and we're in in-memory mode, treat this
 			 * page size as valid. we cannot be in legacy mode at
@@ -436,8 +463,11 @@ hugepage_info_init(void)
 			continue;
 		}
 
+
 		/* try to obtain a writelock */
 		hpi->lock_descriptor = open(hpi->hugedir, O_RDONLY);
+
+        // zhou: when Hugepage init completed, release it by eal_hugedirs_unlock().
 
 		/* if blocking lock failed */
 		if (flock(hpi->lock_descriptor, LOCK_EX) == -1) {
@@ -445,10 +475,12 @@ hugepage_info_init(void)
 				"Failed to lock hugepage directory!\n");
 			break;
 		}
+
 		/* clear out the hugepages dir from unused pages */
 		if (clear_hugedir(hpi->hugedir) == -1)
 			break;
 
+        // zhou: sum of all NUMA nodes.
 		calc_num_pages(hpi, dirent);
 
 		num_sizes++;
@@ -473,6 +505,7 @@ hugepage_info_init(void)
 
 		for (j = 0; j < RTE_MAX_NUMA_NODES; j++)
 			num_pages += hpi->num_pages[j];
+
 		if (num_pages > 0)
 			return 0;
 	}
@@ -486,12 +519,14 @@ hugepage_info_init(void)
  * to socket 0 by default. it will later get sorted by memory
  * initialization procedure.
  */
+// zhou: get OS Hugepage info and write in file, "[runtime dir]/hugepage_info"
 int
 eal_hugepage_info_init(void)
 {
 	struct hugepage_info *hpi, *tmp_hpi;
 	unsigned int i;
 
+    // zhou: get OS Hugepage configutaion
 	if (hugepage_info_init() < 0)
 		return -1;
 
@@ -499,10 +534,14 @@ eal_hugepage_info_init(void)
 	if (internal_config.no_shconf)
 		return 0;
 
+    // zhou: just get array address, not just handle first entry only.
 	hpi = &internal_config.hugepage_info[0];
 
+    // zhou: "/var/run/dpdk/xxx/hugepage_info", and write
+    //       "internal_config.hugepage_info" in it.
 	tmp_hpi = create_shared_memory(eal_hugepage_info_path(),
 			sizeof(internal_config.hugepage_info));
+
 	if (tmp_hpi == NULL) {
 		RTE_LOG(ERR, EAL, "Failed to create shared memory!\n");
 		return -1;
@@ -525,6 +564,7 @@ eal_hugepage_info_init(void)
 	return 0;
 }
 
+// zhou: used in Secondary Process to find Primary's from [runtime dir]/hugepage_info.
 int eal_hugepage_info_read(void)
 {
 	struct hugepage_info *hpi = &internal_config.hugepage_info[0];
@@ -532,6 +572,7 @@ int eal_hugepage_info_read(void)
 
 	tmp_hpi = open_shared_memory(eal_hugepage_info_path(),
 				  sizeof(internal_config.hugepage_info));
+
 	if (tmp_hpi == NULL) {
 		RTE_LOG(ERR, EAL, "Failed to open shared memory!\n");
 		return -1;

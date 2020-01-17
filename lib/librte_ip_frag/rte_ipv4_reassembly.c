@@ -8,6 +8,7 @@
 
 #include "ip_frag_common.h"
 
+// zhou: all fragment received.
 /*
  * Reassemble fragments into one packet.
  */
@@ -41,6 +42,8 @@ ipv4_frag_reassemble(struct ip_frag_pkt *fp)
 				/* adjust start of the last fragment data. */
 				rte_pktmbuf_adj(m,
 					(uint16_t)(m->l2_len + m->l3_len));
+
+                // zhou: chain head tail
 				rte_pktmbuf_chain(fp->frags[i].mb, m);
 
 				/* this mbuf should not be accessed directly */
@@ -59,9 +62,11 @@ ipv4_frag_reassemble(struct ip_frag_pkt *fp)
 		}
 	}
 
+    // zhou: first fragment's Ethernet and IP header will be preserved.
 	/* chain with the first fragment. */
 	rte_pktmbuf_adj(m, (uint16_t)(m->l2_len + m->l3_len));
 	rte_pktmbuf_chain(fp->frags[IP_FIRST_FRAG_IDX].mb, m);
+
 	fp->frags[curr_idx].mb = NULL;
 	m = fp->frags[IP_FIRST_FRAG_IDX].mb;
 	fp->frags[IP_FIRST_FRAG_IDX].mb = NULL;
@@ -94,6 +99,7 @@ ipv4_frag_reassemble(struct ip_frag_pkt *fp)
  *   - an error occurred.
  *   - not all fragments of the packet are collected yet.
  */
+// zhou: process new received fragment.
 struct rte_mbuf *
 rte_ipv4_frag_reassemble_packet(struct rte_ip_frag_tbl *tbl,
 	struct rte_ip_frag_death_row *dr, struct rte_mbuf *mb, uint64_t tms,
@@ -109,13 +115,16 @@ rte_ipv4_frag_reassemble_packet(struct rte_ip_frag_tbl *tbl,
 	ip_ofs = (uint16_t)(flag_offset & RTE_IPV4_HDR_OFFSET_MASK);
 	ip_flag = (uint16_t)(flag_offset & RTE_IPV4_HDR_MF_FLAG);
 
+    // zhou: dst addr just following src addr in IPv4.
 	psd = (unaligned_uint64_t *)&ip_hdr->src_addr;
 	/* use first 8 bytes only */
 	key.src_dst[0] = psd[0];
 	key.id = ip_hdr->packet_id;
 	key.key_len = IPV4_KEYLEN;
 
+    // zhou: unit is 8 bytes.
 	ip_ofs *= RTE_IPV4_HDR_OFFSET_UNITS;
+    // zhou: mb->l3_len should be set before this function invoked.
 	ip_len = rte_be_to_cpu_16(ip_hdr->total_length) - mb->l3_len;
 
 	IP_FRAG_LOG(DEBUG, "%s:%d:\n"
@@ -134,6 +143,7 @@ rte_ipv4_frag_reassemble_packet(struct rte_ip_frag_tbl *tbl,
 		return NULL;
 	}
 
+    // zhou: find the entry.
 	/* try to find/add entry into the fragment's table. */
 	if ((fp = ip_frag_find(tbl, dr, &key, tms)) == NULL) {
 		IP_FRAG_MBUF2DR(dr, mb);
@@ -152,6 +162,7 @@ rte_ipv4_frag_reassemble_packet(struct rte_ip_frag_tbl *tbl,
 
 	/* process the fragmented packet. */
 	mb = ip_frag_process(fp, dr, mb, ip_ofs, ip_len, ip_flag);
+
 	ip_frag_inuse(tbl, fp);
 
 	IP_FRAG_LOG(DEBUG, "%s:%d:\n"

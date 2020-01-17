@@ -34,6 +34,8 @@
  * design of this library.
  */
 
+// zhou: "The timers can be loaded from one core and executed on another. "
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>

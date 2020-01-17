@@ -224,9 +224,15 @@ pkt_burst_prepare(struct rte_mbuf *pkt, struct rte_mempool *mbp,
 /*
  * Transmit a burst of multi-segments packets.
  */
+// zhou:
 static void
 pkt_burst_transmit(struct fwd_stream *fs)
 {
+    // zhou: FIXME, Just for debugging
+#ifdef ZHOU_DEBUG
+    tx_only_begin(0);
+#endif
+
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	struct rte_port *txp;
 	struct rte_mbuf *pkt;
@@ -253,6 +259,7 @@ pkt_burst_transmit(struct fwd_stream *fs)
 	tx_offloads = txp->dev_conf.txmode.offloads;
 	vlan_tci = txp->tx_vlan_id;
 	vlan_tci_outer = txp->tx_vlan_id_outer;
+
 	if (tx_offloads	& DEV_TX_OFFLOAD_VLAN_INSERT)
 		ol_flags = PKT_TX_VLAN_PKT;
 	if (tx_offloads & DEV_TX_OFFLOAD_QINQ_INSERT)
@@ -300,17 +307,21 @@ pkt_burst_transmit(struct fwd_stream *fs)
 		return;
 
 	nb_tx = rte_eth_tx_burst(fs->tx_port, fs->tx_queue, pkts_burst, nb_pkt);
+
 	/*
 	 * Retry if necessary
 	 */
 	if (unlikely(nb_tx < nb_pkt) && fs->retry_enabled) {
 		retry = 0;
+        // zhou: retry at most 64
 		while (nb_tx < nb_pkt && retry++ < burst_tx_retry_num) {
+            // zhou: delay 1us
 			rte_delay_us(burst_tx_delay_time);
 			nb_tx += rte_eth_tx_burst(fs->tx_port, fs->tx_queue,
 					&pkts_burst[nb_tx], nb_pkt - nb_tx);
 		}
 	}
+
 	fs->tx_packets += nb_tx;
 
 	if (txonly_multi_flow)
@@ -319,6 +330,13 @@ pkt_burst_transmit(struct fwd_stream *fs)
 #ifdef RTE_TEST_PMD_RECORD_BURST_STATS
 	fs->tx_burst_stats.pkt_burst_spread[nb_tx]++;
 #endif
+
+    // zhou: drop it due to can't be sent out.
+    //       In worst case, how long need to successfully send a messasge:
+    //       2 us == ((burst_tx_retry_num*burst_tx_delay_time)/nb_pkt_per_burst)
+    //       pps == 1 s/ 2 us == 0.5 Mpps.
+    //       So, considering tx packets size and link speed, once running pps > 0.5 Mpps,
+    //       there will be not tx_queue drop print.
 	if (unlikely(nb_tx < nb_pkt)) {
 		if (verbose_level > 0 && fs->fwd_dropped == 0)
 			printf("port %d tx_queue %d - drop "
@@ -326,7 +344,9 @@ pkt_burst_transmit(struct fwd_stream *fs)
 			       fs->tx_port, fs->tx_queue,
 			       (unsigned) nb_pkt, (unsigned) nb_tx,
 			       (unsigned) (nb_pkt - nb_tx));
+
 		fs->fwd_dropped += (nb_pkt - nb_tx);
+
 		do {
 			rte_pktmbuf_free(pkts_burst[nb_tx]);
 		} while (++nb_tx < nb_pkt);
@@ -337,6 +357,7 @@ pkt_burst_transmit(struct fwd_stream *fs)
 	core_cycles = (end_tsc - start_tsc);
 	fs->core_cycles = (uint64_t) (fs->core_cycles + core_cycles);
 #endif
+
 }
 
 static void

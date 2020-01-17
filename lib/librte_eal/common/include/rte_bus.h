@@ -36,6 +36,7 @@ TAILQ_HEAD(rte_bus_list, rte_bus);
  * on rte_iova_mode will generate physical or virtual address.
  *
  */
+// zhou: device DMA care about it.
 enum rte_iova_mode {
 	RTE_IOVA_DC = 0,	/* Don't care mode */
 	RTE_IOVA_PA = (1 << 0), /* DMA using physical address */
@@ -213,6 +214,8 @@ typedef int (*rte_bus_sigbus_handler_t)(const void *failure_addr);
 /**
  * Bus scan policies
  */
+// zhou: what's the difference between RTE_BUS_SCAN_BLACKLIST and
+//       RTE_DEV_BLACKLISTED ???
 enum rte_bus_scan_mode {
 	RTE_BUS_SCAN_UNDEFINED,
 	RTE_BUS_SCAN_WHITELIST,
@@ -245,7 +248,9 @@ typedef enum rte_iova_mode (*rte_bus_get_iommu_class_t)(void);
  */
 struct rte_bus {
 	TAILQ_ENTRY(rte_bus) next;   /**< Next bus object in linked list */
+
 	const char *name;            /**< Name of the bus */
+
 	rte_bus_scan_t scan;         /**< Scan for devices attached to bus */
 	rte_bus_probe_t probe;       /**< Probe devices on bus */
 	rte_bus_find_device_t find_device; /**< Find a device on the bus */
@@ -255,6 +260,7 @@ struct rte_bus {
 	rte_dev_dma_map_t dma_map;   /**< DMA map for device in the bus */
 	rte_dev_dma_unmap_t dma_unmap; /**< DMA unmap for device in the bus */
 	struct rte_bus_conf conf;    /**< Bus configuration */
+
 	rte_bus_get_iommu_class_t get_iommu_class; /**< Get iommu class */
 	rte_dev_iterate_t dev_iterate; /**< Device iterator. */
 	rte_bus_hot_unplug_handler_t hot_unplug_handler;

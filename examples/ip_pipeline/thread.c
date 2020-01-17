@@ -2754,6 +2754,7 @@ action_convert(struct rte_table_action *a,
 	return 0;
 }
 
+// zhou: README,
 static struct pipeline_msg_rsp *
 pipeline_msg_handle_table_rule_add(struct pipeline_data *p,
 	struct pipeline_msg_req *req)
@@ -2783,6 +2784,7 @@ pipeline_msg_handle_table_rule_add(struct pipeline_data *p,
 		return rsp;
 	}
 
+    // zhou:
 	status = rte_pipeline_table_entry_add(p->p,
 		table_id,
 		&match_ll,
@@ -3034,6 +3036,7 @@ pipeline_msg_handle_table_rule_time_read(struct pipeline_data *p,
 	return rsp;
 }
 
+// zhou: README,
 static void
 pipeline_msg_handle(struct pipeline_data *p)
 {
@@ -3126,6 +3129,7 @@ pipeline_msg_handle(struct pipeline_data *p)
 /**
  * Data plane threads: main
  */
+// zhou: README, data plane loop.
 int
 thread_main(void *arg __rte_unused)
 {

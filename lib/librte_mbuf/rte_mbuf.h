@@ -184,6 +184,7 @@ rte_mbuf_data_dma_addr_default(const struct rte_mbuf *mb)
 	return rte_mbuf_data_iova_default(mb);
 }
 
+// zhou: README,
 /**
  * Return the mbuf owning the data buffer address of an indirect mbuf.
  *
@@ -544,6 +545,12 @@ int rte_mbuf_check(const struct rte_mbuf *m, int is_header,
  *   - The pointer to the new mbuf on success.
  *   - NULL if allocation failed.
  */
+// zhou: using this function to alloc pktmbuf, meaning the invoker should take
+//       responsiblity to init it's mbuf related fields (mempool object related
+//       fields have been set by "rte_mempool_get()".
+//       Becase PMDs (espically in RX functions) will set mbuf as they needs,
+//       using this function to avoid reduntant operations.
+//       For application, it's better to use "ret_pktmbuf_alloc()"
 static inline struct rte_mbuf *rte_mbuf_raw_alloc(struct rte_mempool *mp)
 {
 	struct rte_mbuf *m;
@@ -575,7 +582,9 @@ rte_mbuf_raw_free(struct rte_mbuf *m)
 	RTE_ASSERT(rte_mbuf_refcnt_read(m) == 1);
 	RTE_ASSERT(m->next == NULL);
 	RTE_ASSERT(m->nb_segs == 1);
+
 	__rte_mbuf_sanity_check(m, 0);
+
 	rte_mempool_put(m->pool, m);
 }
 
@@ -767,6 +776,7 @@ static inline void rte_pktmbuf_reset_headroom(struct rte_mbuf *m)
  */
 #define MBUF_INVALID_PORT UINT16_MAX
 
+// zhou: set allocated mbuf.
 static inline void rte_pktmbuf_reset(struct rte_mbuf *m)
 {
 	m->next = NULL;
@@ -779,11 +789,15 @@ static inline void rte_pktmbuf_reset(struct rte_mbuf *m)
 
 	m->ol_flags = 0;
 	m->packet_type = 0;
+
 	rte_pktmbuf_reset_headroom(m);
 
 	m->data_len = 0;
 	__rte_mbuf_sanity_check(m, 1);
 }
+
+// zhou: used in APP normally.
+//       "ret_mbuf_raw_alloc()" has better performance.
 
 /**
  * Allocate a new mbuf from a mempool.
@@ -1050,18 +1064,36 @@ __rte_pktmbuf_copy_hdr(struct rte_mbuf *mdst, const struct rte_mbuf *msrc)
  * @param m
  *   The packet mbuf we're attaching to.
  */
+// zhou: in order to avoid copy, make "mi" attach to "m". It means the "m"
+//       refercence count will increase 1.
 static inline void rte_pktmbuf_attach(struct rte_mbuf *mi, struct rte_mbuf *m)
 {
+    // zhou: "mi" must NOT be used to attach to other, AND, NOT be attached by other.
 	RTE_ASSERT(RTE_MBUF_DIRECT(mi) &&
 	    rte_mbuf_refcnt_read(mi) == 1);
 
 	if (RTE_MBUF_HAS_EXTBUF(m)) {
+        // zhou: the mbuf we are attaching to isn't a direct buffer,
+        //       itself attached to an external buffer.
+        //       The mbuf ("mi" here) being attached will be attached to the
+        //       external buffer instead of mbuf indirection.
+
 		rte_mbuf_ext_refcnt_update(m->shinfo, 1);
 		mi->ol_flags = m->ol_flags;
 		mi->shinfo = m->shinfo;
+
 	} else {
+
+        // zhou: "m" maybe Indirect Buffer also.
+        //       The underlying direct mbuf's reference counter is incremented.
+
 		/* if m is not direct, get the mbuf that embeds the data */
 		rte_mbuf_refcnt_update(rte_mbuf_from_indirect(m), 1);
+
+        // zhou: because mbuf from different mbuf pool, could attach each other.
+        //       In ordre to handle case "mbuf->mbuf->mbuf with buffer", "mi" use
+        //       "priv_size" to preserve private room size of mbuf with buffer.
+        //       Then "mi" could refer to undelying mbuf via rte_mbuf_from_indirect().
 		mi->priv_size = m->priv_size;
 		mi->ol_flags = m->ol_flags | IND_ATTACHED_MBUF;
 	}
@@ -1115,9 +1147,12 @@ __rte_pktmbuf_free_direct(struct rte_mbuf *m)
 	md = rte_mbuf_from_indirect(m);
 
 	if (rte_mbuf_refcnt_update(md, -1) == 0) {
+        // zhou: once reference count become 0, prepare restore.
+
 		md->next = NULL;
 		md->nb_segs = 1;
 		rte_mbuf_refcnt_set(md, 1);
+
 		rte_mbuf_raw_free(md);
 	}
 }
@@ -1135,6 +1170,7 @@ __rte_pktmbuf_free_direct(struct rte_mbuf *m)
  * @param m
  *   The indirect attached packet mbuf.
  */
+// zhou:
 static inline void rte_pktmbuf_detach(struct rte_mbuf *m)
 {
 	struct rte_mempool *mp = m->pool;
@@ -1146,6 +1182,7 @@ static inline void rte_pktmbuf_detach(struct rte_mbuf *m)
 	else
 		__rte_pktmbuf_free_direct(m);
 
+    // zhou: restore original mbuf metadata to prepare put back pool.
 	priv_size = rte_pktmbuf_priv_size(mp);
 	mbuf_size = (uint32_t)(sizeof(struct rte_mbuf) + priv_size);
 	buf_len = rte_pktmbuf_data_room_size(mp);
@@ -1173,6 +1210,7 @@ static inline void rte_pktmbuf_detach(struct rte_mbuf *m)
  *   - (m) if it is the last reference. It can be recycled or freed.
  *   - (NULL) if the mbuf still has remaining references on it.
  */
+// zhou: used by driver to release sent completed segment.
 static __rte_always_inline struct rte_mbuf *
 rte_pktmbuf_prefree_seg(struct rte_mbuf *m)
 {
@@ -1184,6 +1222,7 @@ rte_pktmbuf_prefree_seg(struct rte_mbuf *m)
 			rte_pktmbuf_detach(m);
 
 		if (m->next != NULL) {
+            // zhou:
 			m->next = NULL;
 			m->nb_segs = 1;
 		}
@@ -1191,6 +1230,7 @@ rte_pktmbuf_prefree_seg(struct rte_mbuf *m)
 		return m;
 
 	} else if (__rte_mbuf_refcnt_update(m, -1) == 0) {
+        // zhou: althrough rte_mbuf_refcnt_read() == 1, but when
 
 		if (!RTE_MBUF_DIRECT(m))
 			rte_pktmbuf_detach(m);
@@ -1199,10 +1239,14 @@ rte_pktmbuf_prefree_seg(struct rte_mbuf *m)
 			m->next = NULL;
 			m->nb_segs = 1;
 		}
+
+        // zhou: recover it as 1.
 		rte_mbuf_refcnt_set(m, 1);
 
 		return m;
 	}
+
+    // zhou: reference count still >= 1.
 	return NULL;
 }
 
@@ -1219,6 +1263,7 @@ static __rte_always_inline void
 rte_pktmbuf_free_seg(struct rte_mbuf *m)
 {
 	m = rte_pktmbuf_prefree_seg(m);
+
 	if (likely(m != NULL))
 		rte_mbuf_raw_free(m);
 }
@@ -1232,6 +1277,8 @@ rte_pktmbuf_free_seg(struct rte_mbuf *m)
  * @param m
  *   The packet mbuf to be freed. If NULL, the function does nothing.
  */
+// zhou: all chained segments will be freed in case the reference count decreased
+//       to 0.
 static inline void rte_pktmbuf_free(struct rte_mbuf *m)
 {
 	struct rte_mbuf *m_next;
@@ -1318,6 +1365,7 @@ rte_pktmbuf_copy(const struct rte_mbuf *m, struct rte_mempool *mp,
  * @param v
  *   The value to add to the mbuf's segments refcnt.
  */
+// zhou: used when a packet will be sent more than one time.
 static inline void rte_pktmbuf_refcnt_update(struct rte_mbuf *m, int16_t v)
 {
 	__rte_mbuf_sanity_check(m, 1);
@@ -1335,6 +1383,8 @@ static inline void rte_pktmbuf_refcnt_update(struct rte_mbuf *m, int16_t v)
  * @return
  *   The length of the headroom.
  */
+// zhou: headroom is dynamical, which enlarged by rte_pktmbuf_adj(), shrinked by
+//       rte_pktmbuf_prepend().
 static inline uint16_t rte_pktmbuf_headroom(const struct rte_mbuf *m)
 {
 	__rte_mbuf_sanity_check(m, 0);
@@ -1367,6 +1417,7 @@ static inline uint16_t rte_pktmbuf_tailroom(const struct rte_mbuf *m)
 static inline struct rte_mbuf *rte_pktmbuf_lastseg(struct rte_mbuf *m)
 {
 	__rte_mbuf_sanity_check(m, 1);
+
 	while (m->next != NULL)
 		m = m->next;
 	return m;
@@ -1414,6 +1465,7 @@ static inline struct rte_mbuf *rte_pktmbuf_lastseg(struct rte_mbuf *m)
  *   A pointer to the start of the newly prepended data, or
  *   NULL if there is not enough headroom space in the first segment
  */
+// zhou: use headroom to store prepend header.
 static inline char *rte_pktmbuf_prepend(struct rte_mbuf *m,
 					uint16_t len)
 {
@@ -1447,6 +1499,7 @@ static inline char *rte_pktmbuf_prepend(struct rte_mbuf *m,
  *   A pointer to the start of the newly appended data, or
  *   NULL if there is not enough tailroom space in the last segment
  */
+// zhou: add at the end. Using "rte_pktmbuf_prepend()" to add at the begining.
 static inline char *rte_pktmbuf_append(struct rte_mbuf *m, uint16_t len)
 {
 	void *tail;
@@ -1478,10 +1531,13 @@ static inline char *rte_pktmbuf_append(struct rte_mbuf *m, uint16_t len)
  * @return
  *   A pointer to the new start of the data.
  */
+// zhou: adjust offset, to ignore first "len" bytes.
 static inline char *rte_pktmbuf_adj(struct rte_mbuf *m, uint16_t len)
 {
 	__rte_mbuf_sanity_check(m, 1);
 
+    // zhou: can NOT exceed the first segment data len.
+    //       Otherwise, user should caculate by remove first several segments.
 	if (unlikely(len > m->data_len))
 		return NULL;
 
@@ -1489,8 +1545,10 @@ static inline char *rte_pktmbuf_adj(struct rte_mbuf *m, uint16_t len)
 	 *     += allows us to ensure the result type is uint16_t
 	 *     avoiding compiler warnings on gcc 8.1 at least */
 	m->data_len = (uint16_t)(m->data_len - len);
+    // zhou: headroom increase at the same time.
 	m->data_off = (uint16_t)(m->data_off + len);
 	m->pkt_len  = (m->pkt_len - len);
+
 	return (char *)m->buf_addr + m->data_off;
 }
 
@@ -1508,6 +1566,7 @@ static inline char *rte_pktmbuf_adj(struct rte_mbuf *m, uint16_t len)
  *   - 0: On success.
  *   - -1: On error.
  */
+// zhou: comparing to "rte_pktmbuf_adj()"
 static inline int rte_pktmbuf_trim(struct rte_mbuf *m, uint16_t len)
 {
 	struct rte_mbuf *m_last;
@@ -1564,6 +1623,7 @@ const void *__rte_pktmbuf_read(const struct rte_mbuf *m, uint32_t off,
  *   The pointer to the data, either in the mbuf if it is contiguous,
  *   or in the user buffer. If mbuf is too small, NULL is returned.
  */
+// zhou: in case of return pointer==buf, copyed.
 static inline const void *rte_pktmbuf_read(const struct rte_mbuf *m,
 	uint32_t off, uint32_t len, void *buf)
 {
@@ -1589,6 +1649,8 @@ static inline const void *rte_pktmbuf_read(const struct rte_mbuf *m,
  *   - 0, on success.
  *   - -EOVERFLOW, if the chain segment limit exceeded
  */
+// zhou: when one mbuf can't hold all data, has to chain several mbuf.
+//       Could be used to merge two list.
 static inline int rte_pktmbuf_chain(struct rte_mbuf *head, struct rte_mbuf *tail)
 {
 	struct rte_mbuf *cur_tail;
@@ -1608,6 +1670,7 @@ static inline int rte_pktmbuf_chain(struct rte_mbuf *head, struct rte_mbuf *tail
 	head->nb_segs = (uint16_t)(head->nb_segs + tail->nb_segs);
 	head->pkt_len += tail->pkt_len;
 
+    // zhou: pkt_len is only set in the head, others will be set as "data_len"
 	/* pkt_len is only set in the head */
 	tail->pkt_len = tail->data_len;
 
@@ -1661,6 +1724,8 @@ rte_mbuf_tx_offload(uint64_t il2, uint64_t il3, uint64_t il4, uint64_t tso,
  * @return
  *   0 if packet is valid
  */
+// zhou: README, debug only, just make sure the dependency or confliction of
+//       these offload feature.
 static inline int
 rte_validate_tx_offload(const struct rte_mbuf *m)
 {

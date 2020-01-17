@@ -518,6 +518,7 @@ static const struct rte_eth_desc_lim tx_desc_lim = {
 	.nb_mtu_seg_max = IXGBE_TX_MAX_SEG,
 };
 
+// zhou: operations implemented by this driver.
 static const struct eth_dev_ops ixgbe_eth_dev_ops = {
 	.dev_configure        = ixgbe_dev_configure,
 	.dev_start            = ixgbe_dev_start,
@@ -540,6 +541,7 @@ static const struct eth_dev_ops ixgbe_eth_dev_ops = {
 	.xstats_get_names_by_id = ixgbe_dev_xstats_get_names_by_id,
 	.queue_stats_mapping_set = ixgbe_dev_queue_stats_mapping_set,
 	.fw_version_get       = ixgbe_fw_version_get,
+
 	.dev_infos_get        = ixgbe_dev_info_get,
 	.dev_supported_ptypes_get = ixgbe_dev_supported_ptypes_get,
 	.mtu_set              = ixgbe_dev_mtu_set,
@@ -1072,6 +1074,10 @@ ixgbe_swfw_lock_reset(struct ixgbe_hw *hw)
  * This function is based on code in ixgbe_attach() in base/ixgbe.c.
  * It returns 0 on success.
  */
+// zhou: device init.
+//       "The role of the device init function consists of resetting the hardware,
+//       checking access to Non-volatile Memory (NVM), reading the MAC address
+//       from NVM etc."
 static int
 eth_ixgbe_dev_init(struct rte_eth_dev *eth_dev, void *init_params __rte_unused)
 {
@@ -1097,7 +1103,9 @@ eth_ixgbe_dev_init(struct rte_eth_dev *eth_dev, void *init_params __rte_unused)
 
 	ixgbe_dev_macsec_setting_reset(eth_dev);
 
+    // zhou: supply operations set implemented by this driver.
 	eth_dev->dev_ops = &ixgbe_eth_dev_ops;
+
 	eth_dev->rx_pkt_burst = &ixgbe_recv_pkts;
 	eth_dev->tx_pkt_burst = &ixgbe_xmit_pkts;
 	eth_dev->tx_pkt_prepare = &ixgbe_prep_pkts;
@@ -1736,6 +1744,7 @@ eth_ixgbevf_dev_uninit(struct rte_eth_dev *eth_dev)
 	return 0;
 }
 
+// zhou: README, invoked by "rte_pci_probe_one_driver()"
 static int
 eth_ixgbe_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 		struct rte_pci_device *pci_dev)
@@ -1753,6 +1762,7 @@ eth_ixgbe_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 	} else
 		memset(&eth_da, 0, sizeof(eth_da));
 
+    // zhou:
 	retval = rte_eth_dev_create(&pci_dev->device, pci_dev->device.name,
 		sizeof(struct ixgbe_adapter),
 		eth_dev_pci_specific_init, pci_dev,
@@ -1761,6 +1771,7 @@ eth_ixgbe_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 	if (retval || eth_da.nb_representor_ports < 1)
 		return retval;
 
+    // zhou:
 	pf_ethdev = rte_eth_dev_allocated(pci_dev->device.name);
 	if (pf_ethdev == NULL)
 		return -ENODEV;
@@ -1787,6 +1798,7 @@ eth_ixgbe_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 			pci_dev->device.name,
 			eth_da.representor_ports[i]);
 
+        // zhou:
 		retval = rte_eth_dev_create(&pci_dev->device, name,
 			sizeof(struct ixgbe_vf_representor), NULL, NULL,
 			ixgbe_vf_representor_init, &representor);
@@ -1815,6 +1827,7 @@ static int eth_ixgbe_pci_remove(struct rte_pci_device *pci_dev)
 						eth_ixgbe_dev_uninit);
 }
 
+// zhou:
 static struct rte_pci_driver rte_ixgbe_pmd = {
 	.id_table = pci_id_ixgbe_map,
 	.drv_flags = RTE_PCI_DRV_NEED_MAPPING | RTE_PCI_DRV_INTR_LSC,
@@ -3089,6 +3102,7 @@ ixgbe_read_stats_registers(struct ixgbe_hw *hw,
 		hw_stats->mpc[i] += mp;
 		/* Running comprehensive total for stats display */
 		*total_missed_rx += hw_stats->mpc[i];
+
 		if (hw->mac.type == ixgbe_mac_82598EB) {
 			hw_stats->rnbc[i] +=
 			    IXGBE_READ_REG(hw, IXGBE_RNBC(i));
@@ -5057,6 +5071,7 @@ is_ixgbe_supported(struct rte_eth_dev *dev)
 	return is_device_supported(dev, &rte_ixgbe_pmd);
 }
 
+// zhou:
 static int
 ixgbe_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 {
@@ -5064,6 +5079,7 @@ ixgbe_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 	uint32_t maxfrs;
 	struct ixgbe_hw *hw;
 	struct rte_eth_dev_info dev_info;
+    // zhou: the input MTU doesn't includes Ethernet header.
 	uint32_t frame_size = mtu + IXGBE_ETH_OVERHEAD;
 	struct rte_eth_dev_data *dev_data = dev->data;
 	int ret;
@@ -6930,6 +6946,7 @@ ixgbe_ethertype_filter_handle(struct rte_eth_dev *dev,
 	return ret;
 }
 
+// zhou:
 static int
 ixgbe_dev_filter_ctrl(struct rte_eth_dev *dev,
 		     enum rte_filter_type filter_type,
@@ -6981,6 +6998,7 @@ ixgbe_dev_addr_list_itr(__attribute__((unused)) struct ixgbe_hw *hw,
 	return mc_addr;
 }
 
+// zhou:
 static int
 ixgbe_dev_set_mc_addr_list(struct rte_eth_dev *dev,
 			  struct rte_ether_addr *mc_addr_set,
@@ -8989,6 +9007,7 @@ ixgbe_dev_macsec_register_disable(struct rte_eth_dev *dev)
 RTE_PMD_REGISTER_PCI(net_ixgbe, rte_ixgbe_pmd);
 RTE_PMD_REGISTER_PCI_TABLE(net_ixgbe, pci_id_ixgbe_map);
 RTE_PMD_REGISTER_KMOD_DEP(net_ixgbe, "* igb_uio | uio_pci_generic | vfio-pci");
+
 RTE_PMD_REGISTER_PCI(net_ixgbe_vf, rte_ixgbevf_pmd);
 RTE_PMD_REGISTER_PCI_TABLE(net_ixgbe_vf, pci_id_ixgbevf_map);
 RTE_PMD_REGISTER_KMOD_DEP(net_ixgbe_vf, "* igb_uio | vfio-pci");

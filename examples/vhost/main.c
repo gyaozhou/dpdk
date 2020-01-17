@@ -1517,6 +1517,7 @@ main(int argc, char *argv[])
 	/* Register vhost user driver to handle vhost messages. */
 	for (i = 0; i < nb_sockets; i++) {
 		char *file = socket_files + i * PATH_MAX;
+        // zhou: README,
 		ret = rte_vhost_driver_register(file, flags);
 		if (ret != 0) {
 			unregister_drivers(i);

@@ -422,6 +422,7 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
  * Performs initialisation and then calls the lcore_main on each core
  * to do the packet-processing work.
  */
+// zhou: README,
 int
 main(int argc, char **argv)
 {

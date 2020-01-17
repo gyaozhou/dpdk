@@ -30,7 +30,11 @@ struct rte_mbuf;
 enum {
 	IP_LAST_FRAG_IDX,    /**< index of last fragment */
 	IP_FIRST_FRAG_IDX,   /**< index of first fragment */
+
 	IP_MIN_FRAG_NUM,     /**< minimum number of fragments */
+
+    // zhou: 4, can not override by user. But can be overrided when DPDK
+    //       compilation via config.
 	IP_MAX_FRAG_NUM = RTE_LIBRTE_IP_FRAG_MAX_FRAG,
 	/**< maximum number of fragments per packet */
 };
@@ -39,13 +43,16 @@ enum {
 struct ip_frag {
 	uint16_t ofs;          /**< offset into the packet */
 	uint16_t len;          /**< length of fragment */
+
 	struct rte_mbuf *mb;   /**< fragment mbuf */
 };
 
 /** @internal <src addr, dst_addr, id> to uniquely identify fragmented datagram. */
 struct ip_frag_key {
+    // zhou: IPv4 only use src_dst[0].
 	uint64_t src_dst[4];
 	/**< src and dst address, only first 8 bytes used for IPv4 */
+
 	RTE_STD_C11
 	union {
 		uint64_t id_key_len; /**< combined for easy fetch */
@@ -63,11 +70,21 @@ struct ip_frag_key {
  */
 struct ip_frag_pkt {
 	TAILQ_ENTRY(ip_frag_pkt) lru;   /**< LRU list */
+
 	struct ip_frag_key key;           /**< fragmentation key */
+
+    // zhou: when the key firstly insert table.
 	uint64_t             start;       /**< creation timestamp */
+
 	uint32_t             total_size;  /**< expected reassembled size */
 	uint32_t             frag_size;   /**< size of fragments received */
+
 	uint32_t             last_idx;    /**< index of next entry to fill */
+
+    // zhou: all fragments of this IP packet.
+    //       [IP_FIRST_FRAG_IDX], used to store first fragment of packet.
+    //       [IP_LAST_FRAG_IDX], used to store last fragment of packet.
+    //       Other intermediate fragments will store in [>=IP_FIRST_FRAG_IDX].
 	struct ip_frag       frags[IP_MAX_FRAG_NUM]; /**< fragments */
 } __rte_cache_aligned;
 
@@ -76,6 +93,7 @@ struct ip_frag_pkt {
 /* death row size in mbufs */
 #define IP_FRAG_DEATH_ROW_MBUF_LEN (IP_FRAG_DEATH_ROW_LEN * (IP_MAX_FRAG_NUM + 1))
 
+// zhou: expired entries to be recycled in batch.
 /** mbuf death row (packets to be freed) */
 struct rte_ip_frag_death_row {
 	uint32_t cnt;          /**< number of mbufs currently on death row */
@@ -92,21 +110,44 @@ struct ip_frag_tbl_stat {
 	uint64_t del_num;       /**< # of del ops. */
 	uint64_t reuse_num;     /**< # of reuse (del/add) ops. */
 	uint64_t fail_total;    /**< total # of add failures. */
+    // zhou: no free entry
 	uint64_t fail_nospace;  /**< # of 'no space' add failures. */
 } __rte_cache_aligned;
 
+// zhou: every bucket share unique same key hash value (by position in hashtable),
+//       but different key may has same key hash value.
+//       In general implementation, only one entry allocated for each hash value==postion.
+//       Here allocated "bucket_entries" for each postion.
+//       So, this implementation is a bucket array, and hash value & mask get position of
+//       bucket, still need to compare key one by one entry of this bucket.
+//       From implementation view, it's still be a flat 1-D array, NOT 2-D array.
+//       "entry_mask" is used to get bucket postion in this 1-D array.
 /** fragmentation table */
 struct rte_ip_frag_tbl {
+    // zhou: global fragment expired time.
 	uint64_t             max_cycles;      /**< ttl for table entries. */
+
+    // zhou: bucket postion mask from total enties.
 	uint32_t             entry_mask;      /**< hash value mask. */
+
+    // zhou: limitation set by user.
 	uint32_t             max_entries;     /**< max entries allowed. */
 	uint32_t             use_entries;     /**< entries in use. */
+    // zhou: entries per bucket
 	uint32_t             bucket_entries;  /**< hash associativity. */
+    // zhou: all allocated, could be used by hashtable internal.
 	uint32_t             nb_entries;      /**< total size of the table. */
+    // zhou: bucket number.
 	uint32_t             nb_buckets;      /**< num of associativity lines. */
+
+    // zhou: maybe new/reuse/recycle
 	struct ip_frag_pkt *last;         /**< last used entry. */
+
+    // zhou: used to recycle last not used entry when no space.
 	struct ip_pkt_list lru;           /**< LRU list for table entries. */
 	struct ip_frag_tbl_stat stat;     /**< statistics counters. */
+
+    // zhou: start of entry array
 	__extension__ struct ip_frag_pkt pkt[0]; /**< hash table. */
 };
 
@@ -303,6 +344,7 @@ struct rte_mbuf * rte_ipv4_frag_reassemble_packet(struct rte_ip_frag_tbl *tbl,
  * @return
  *   1 if fragmented, 0 if not fragmented
  */
+// zhou:  !(Fragment Offset==0 && !(Fragment Flag & IPV4_HDR_MF_FLAG))
 static inline int
 rte_ipv4_frag_pkt_is_fragmented(const struct rte_ipv4_hdr *hdr)
 {

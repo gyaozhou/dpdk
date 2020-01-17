@@ -34,16 +34,25 @@
 
 #include "rte_ring.h"
 
+// zhou: refer to "man 3 queue",
+
+// zhou: "rte_ring_list" == "rte_tailq_entry_head", just define a special name
+//       for this library.
 TAILQ_HEAD(rte_ring_list, rte_tailq_entry);
 
+// zhou:
 static struct rte_tailq_elem rte_ring_tailq = {
 	.name = RTE_TAILQ_RING_NAME,
 };
+
+// zhou: link "rte_ring_tailq" to "rte_tailq_elem_head"
 EAL_REGISTER_TAILQ(rte_ring_tailq)
 
+// zhou: skill to judge power of 2.
 /* true if x is a power of 2 */
 #define POWEROF2(x) ((((x)-1) & (x)) == 0)
 
+// zhou: "count" must be power of 2.
 /* return the size of memory occupied by a ring */
 ssize_t
 rte_ring_get_memsize(unsigned count)
@@ -58,6 +67,7 @@ rte_ring_get_memsize(unsigned count)
 		return -EINVAL;
 	}
 
+    // zhou: each element just a "void *".
 	sz = sizeof(struct rte_ring) + count * sizeof(void *);
 	sz = RTE_ALIGN(sz, RTE_CACHE_LINE_SIZE);
 	return sz;
@@ -114,6 +124,7 @@ rte_ring_init(struct rte_ring *r, const char *name, unsigned count,
 	return 0;
 }
 
+// zhou: allocate user's ring, and link to rte_ring_list.
 /* create the ring */
 struct rte_ring *
 rte_ring_create(const char *name, unsigned count, int socket_id,
@@ -129,12 +140,16 @@ rte_ring_create(const char *name, unsigned count, int socket_id,
 	const unsigned int requested_count = count;
 	int ret;
 
+    // zhou: once it already be initilized in shared memory.
 	ring_list = RTE_TAILQ_CAST(rte_ring_tailq.head, rte_ring_list);
 
+    // zhou: with this flag, count will be adjusted auto.
+    //       According to Ring implementation, 1 entry can not be used!!!
 	/* for an exact size ring, round up from count to a power of two */
 	if (flags & RING_F_EXACT_SZ)
 		count = rte_align32pow2(count + 1);
 
+    // zhou: "count" must be power of 2.
 	ring_size = rte_ring_get_memsize(count);
 	if (ring_size < 0) {
 		rte_errno = ring_size;
@@ -262,6 +277,7 @@ rte_ring_list_dump(FILE *f)
 	rte_mcfg_tailq_read_unlock();
 }
 
+// zhou: could be used non-DPDK thread, after rte_eal_init() completed.
 /* search a ring from its name */
 struct rte_ring *
 rte_ring_lookup(const char *name)
@@ -270,10 +286,13 @@ rte_ring_lookup(const char *name)
 	struct rte_ring *r = NULL;
 	struct rte_ring_list *ring_list;
 
+    // zhou: no need seach different library defined tailq. Could convert
+    //       directly since we have its address.
 	ring_list = RTE_TAILQ_CAST(rte_ring_tailq.head, rte_ring_list);
 
 	rte_mcfg_tailq_read_lock();
 
+    // zhou: for each user allocated in this kind tailq.
 	TAILQ_FOREACH(te, ring_list, next) {
 		r = (struct rte_ring *) te->data;
 		if (strncmp(name, r->name, RTE_RING_NAMESIZE) == 0)

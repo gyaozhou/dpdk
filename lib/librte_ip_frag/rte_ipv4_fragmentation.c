@@ -28,6 +28,8 @@ static inline void __fill_ipv4hdr_frag(struct rte_ipv4_hdr *dst,
 	rte_memcpy(dst, src, sizeof(*dst));
 	fofs = (uint16_t)(fofs + (dofs >> RTE_IPV4_HDR_FO_SHIFT));
 	fofs = (uint16_t)(fofs | mf << RTE_IPV4_HDR_MF_SHIFT);
+    // zhou: dst->packet_id comes from input packet, so it should be set unique
+    //       before passing to rte_ipv4_fragment_packet().
 	dst->fragment_offset = rte_cpu_to_be_16(fofs);
 	dst->total_length = rte_cpu_to_be_16(len);
 	dst->hdr_checksum = 0;
@@ -61,6 +63,16 @@ static inline void __free_fragments(struct rte_mbuf *mb[], uint32_t num)
  *   in the pkts_out array.
  *   Otherwise - (-1) * <errno>.
  */
+// zhou: "nb_pkts_out" is the available number of array "pkts_out".
+//       It means the number of output IP Fragment, and each IP Fragment may be
+//       composited with several segments as needed.
+//
+//       The input packet must be a full IP packet, can NOT be a IP fragment.
+//       But a real router should have to deal with a IP fragment, frag again
+//       in case sending MTU is smaller.
+//
+//       Each IP Fragement, will be composited with 1 direcrt mbuf (hold IP head
+//       only) and several indirect mbuf (refer to input IP packet).
 int32_t
 rte_ipv4_fragment_packet(struct rte_mbuf *pkt_in,
 	struct rte_mbuf **pkts_out,
@@ -76,6 +88,8 @@ rte_ipv4_fragment_packet(struct rte_mbuf *pkt_in,
 	uint16_t fragment_offset, flag_offset, frag_size;
 	uint16_t frag_bytes_remaining;
 
+    // zhou: fragment size should align with 8 bytes, due to Fragment Offset
+    //       is in unit 8 bytes.
 	/*
 	 * Ensure the IP payload length of all fragments is aligned to a
 	 * multiple of 8 bytes as per RFC791 section 2.3.
@@ -86,26 +100,39 @@ rte_ipv4_fragment_packet(struct rte_mbuf *pkt_in,
 	in_hdr = rte_pktmbuf_mtod(pkt_in, struct rte_ipv4_hdr *);
 	flag_offset = rte_cpu_to_be_16(in_hdr->fragment_offset);
 
+    // zhou: why not check whether the input packet is a fragment already?
+    //       According to implementation, we don't read Fragment Offset of input
+    //       packet. It means we don't handle an IP fragment.
 	/* If Don't Fragment flag is set */
 	if (unlikely ((flag_offset & IPV4_HDR_DF_MASK) != 0))
 		return -ENOTSUP;
 
+    // zhou: "nb_pkts_out" is not big enough to hold all fragments.
 	/* Check that pkts_out is big enough to hold all fragments */
 	if (unlikely(frag_size * nb_pkts_out <
 	    (uint16_t)(pkt_in->pkt_len - sizeof(struct rte_ipv4_hdr))))
 		return -EINVAL;
 
+
+    // zhou: refer to current processing mbuf
 	in_seg = pkt_in;
 	in_seg_data_pos = sizeof(struct rte_ipv4_hdr);
 	out_pkt_pos = 0;
 	fragment_offset = 0;
 
+    // zhou: any more segments of input packet.
 	more_in_segs = 1;
+
 	while (likely(more_in_segs)) {
+
+        // zhou: each IP Fragment, owns one out_pkt and several segments.
 		struct rte_mbuf *out_pkt = NULL, *out_seg_prev = NULL;
 		uint32_t more_out_segs;
 		struct rte_ipv4_hdr *out_hdr;
 
+        // zhou: each direct buffer allocation means an IP Fragment.
+        //       And it stores IP header only.
+        //       "out_pkt" is the first segment of this fragment.
 		/* Allocate direct buffer */
 		out_pkt = rte_pktmbuf_alloc(pool_direct);
 		if (unlikely(out_pkt == NULL)) {
@@ -116,14 +143,23 @@ rte_ipv4_fragment_packet(struct rte_mbuf *pkt_in,
 		/* Reserve space for the IP header that will be built later */
 		out_pkt->data_len = sizeof(struct rte_ipv4_hdr);
 		out_pkt->pkt_len = sizeof(struct rte_ipv4_hdr);
+        // zhou: IP fragment remaining space, not including IP header.
 		frag_bytes_remaining = frag_size;
 
+        // zhou: prev segment of output packet.
 		out_seg_prev = out_pkt;
+
+        // zhou: any more space left in this output packet due to "frag_size".
+        //       limit. Should be set 1 when alloc new direct mbuf.
 		more_out_segs = 1;
+
+        // zhou: in case of this IP segment of output messsage has not been full
+        //       filled, we should found next mbuf of "pkt_in"
 		while (likely(more_out_segs && more_in_segs)) {
 			struct rte_mbuf *out_seg = NULL;
 			uint32_t len;
 
+            // zhou: used to refer to input packet data.
 			/* Allocate indirect buffer */
 			out_seg = rte_pktmbuf_alloc(pool_indirect);
 			if (unlikely(out_seg == NULL)) {
@@ -131,36 +167,55 @@ rte_ipv4_fragment_packet(struct rte_mbuf *pkt_in,
 				__free_fragments(pkts_out, out_pkt_pos);
 				return -ENOMEM;
 			}
+
+            // zhou: link all segments of this IP Fragment.
 			out_seg_prev->next = out_seg;
 			out_seg_prev = out_seg;
 
+            // zhou: need to adjust offset later.
 			/* Prepare indirect buffer */
 			rte_pktmbuf_attach(out_seg, in_seg);
+
 			len = frag_bytes_remaining;
 			if (len > (in_seg->data_len - in_seg_data_pos)) {
+                // zhou: can not accross boundary of two segments of input packet.
+                //       Then means, the
 				len = in_seg->data_len - in_seg_data_pos;
 			}
 			out_seg->data_off = in_seg->data_off + in_seg_data_pos;
 			out_seg->data_len = (uint16_t)len;
+
+            // zhou: update first segment.
 			out_pkt->pkt_len = (uint16_t)(len +
 			    out_pkt->pkt_len);
 			out_pkt->nb_segs += 1;
+
 			in_seg_data_pos += len;
 			frag_bytes_remaining -= len;
 
+            // zhou: this IP Fragment is full.
+            //       Need to create another IP Fragment if still some data left
+            //       in input packet.
 			/* Current output packet (i.e. fragment) done ? */
 			if (unlikely(frag_bytes_remaining == 0))
 				more_out_segs = 0;
 
+            // zhou: current segment of input packet is done, try to move to
+            //       next segment of input packet.
 			/* Current input segment done ? */
 			if (unlikely(in_seg_data_pos == in_seg->data_len)) {
+                // zhou: the input packets is composed with several segments.
 				in_seg = in_seg->next;
 				in_seg_data_pos = 0;
 
+                // zhou: no more segments of input packet, completed totally.
 				if (unlikely(in_seg == NULL))
 					more_in_segs = 0;
 			}
 		}
+
+
+        // zhou: build IP header for this IP Fragement.
 
 		/* Build the IP header */
 

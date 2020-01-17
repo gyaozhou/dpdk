@@ -861,6 +861,7 @@ power_freq_scaleup_heuristic(unsigned lcore_id,
  * @return
  *  0 on success
  */
+// zhou:
 static int
 sleep_until_rx_interrupt(int num)
 {
@@ -874,7 +875,9 @@ sleep_until_rx_interrupt(int num)
 		"lcore %u sleeps until interrupt triggers\n",
 		rte_lcore_id());
 
+    // zhou:
 	n = rte_epoll_wait(RTE_EPOLL_PER_THREAD, event, num, -1);
+
 	for (i = 0; i < n; i++) {
 		data = event[i].epdata.data;
 		port_id = ((uintptr_t)data) >> CHAR_BIT;
@@ -892,6 +895,7 @@ sleep_until_rx_interrupt(int num)
 	return 0;
 }
 
+// zhou:
 static void turn_on_intr(struct lcore_conf *qconf)
 {
 	int i;
@@ -1194,8 +1198,10 @@ main_loop(__attribute__((unused)) void *dummy)
 	RTE_LOG(INFO, L3FWD_POWER, "entering main loop on lcore %u\n", lcore_id);
 
 	for (i = 0; i < qconf->n_rx_queue; i++) {
+
 		portid = qconf->rx_queue_list[i].port_id;
 		queueid = qconf->rx_queue_list[i].queue_id;
+
 		RTE_LOG(INFO, L3FWD_POWER, " -- lcoreid=%u portid=%u "
 			"rxqueueid=%hhu\n", lcore_id, portid, queueid);
 	}
@@ -1330,17 +1336,23 @@ start_rx:
 					lcore_idle_hint = rx_queue->idle_hint;
 			}
 
+            // zhou: sleep for a while or give up CPU.
 			if (lcore_idle_hint < SUSPEND_THRESHOLD)
 				/**
 				 * execute "pause" instruction to avoid context
 				 * switch which generally take hundred of
 				 * microseconds for short sleep.
 				 */
+                // zhou: different sleep time may make core to enter differernt
+                //       C state. Shut down Core in different level. And wait up
+                //       will take different time.
 				rte_delay_us(lcore_idle_hint);
 			else {
 				/* suspend until rx interrupt trigges */
 				if (intr_en) {
+                    // zhou: enable ethdev interrupt.
 					turn_on_intr(qconf);
+                    // zhou: block here, waiting UIO fd reporting interrupt event.
 					sleep_until_rx_interrupt(
 						qconf->n_rx_queue);
 					/**
@@ -2077,6 +2089,7 @@ init_power_library(void)
 	int ret = 0, lcore_id;
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		if (rte_lcore_is_enabled(lcore_id)) {
+
 			/* init power management library */
 			ret = rte_power_init(lcore_id);
 			if (ret)

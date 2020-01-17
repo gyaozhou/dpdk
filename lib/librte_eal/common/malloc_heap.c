@@ -361,6 +361,7 @@ alloc_pages_on_heap(struct malloc_heap *heap, uint64_t pg_sz, size_t elt_size,
 			RTE_LOG(ERR, EAL,
 				"%s(): Please try initializing EAL with --iova-mode=pa parameter\n",
 				__func__);
+
 		goto fail;
 	}
 
@@ -688,6 +689,7 @@ alloc_unlock:
 	return ret;
 }
 
+// zhou: README,
 void *
 malloc_heap_alloc(const char *type, size_t size, int socket_arg,
 		unsigned int flags, size_t align, size_t bound, bool contig)
@@ -1315,6 +1317,7 @@ malloc_heap_destroy(struct malloc_heap *heap)
 	return 0;
 }
 
+// zhou: README,
 int
 rte_eal_malloc_heap_init(void)
 {

@@ -517,6 +517,7 @@ signal_handler(int signum)
 	}
 }
 
+// zhou: "$ ./build/l2fwd -c f -n 4 -- -q 8 -p ffff "
 int
 main(int argc, char **argv)
 {
@@ -534,6 +535,7 @@ main(int argc, char **argv)
 	ret = rte_eal_init(argc, argv);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Invalid EAL arguments\n");
+
 	argc -= ret;
 	argv += ret;
 
@@ -582,6 +584,7 @@ main(int argc, char **argv)
 
 		nb_ports_in_mask++;
 	}
+
 	if (nb_ports_in_mask % 2) {
 		printf("Notice: odd number of ports in portmask.\n");
 		l2fwd_dst_ports[last_port] = last_port;
@@ -619,6 +622,7 @@ main(int argc, char **argv)
 	nb_mbufs = RTE_MAX(nb_ports * (nb_rxd + nb_txd + MAX_PKT_BURST +
 		nb_lcores * MEMPOOL_CACHE_SIZE), 8192U);
 
+    // zhou: mbuf will be used by each packet storage, shared with TX/RX
 	/* create the mbuf pool */
 	l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", nb_mbufs,
 		MEMPOOL_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
@@ -638,8 +642,10 @@ main(int argc, char **argv)
 			printf("Skipping disabled port %u\n", portid);
 			continue;
 		}
+
 		nb_ports_available++;
 
+        // zhou: Step 2, basic Ethernet Controller Configuration Setup
 		/* init port */
 		printf("Initializing port %u... ", portid);
 		fflush(stdout);
@@ -672,6 +678,7 @@ main(int argc, char **argv)
 				 "Cannot get MAC address: err=%d, port=%u\n",
 				 ret, portid);
 
+        // zhou: Step 3, each core setup only one RX/TX Queue of NIC
 		/* init one RX queue */
 		fflush(stdout);
 		rxq_conf = dev_info.default_rxconf;
@@ -718,6 +725,8 @@ main(int argc, char **argv)
 		if (ret < 0)
 			printf("Port %u, Failed to disable Ptype parsing\n",
 					portid);
+
+        // zhou: Step 4, init NIC registers
 		/* Start device */
 		ret = rte_eth_dev_start(portid);
 		if (ret < 0)
@@ -743,6 +752,8 @@ main(int argc, char **argv)
 
 		/* initialize port stats */
 		memset(&port_statistics, 0, sizeof(port_statistics));
+
+        // zhou: end of port loop
 	}
 
 	if (!nb_ports_available) {
@@ -750,9 +761,14 @@ main(int argc, char **argv)
 			"All available ports are disabled. Please set portmask.\n");
 	}
 
+
+    // zhou: check link status for each port
 	check_all_ports_link_status(l2fwd_enabled_port_mask);
 
 	ret = 0;
+
+    // zhou: specify which function each logic core should run.
+
 	/* launch per-lcore init on every lcore */
 	rte_eal_mp_remote_launch(l2fwd_launch_one_lcore, NULL, CALL_MASTER);
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {

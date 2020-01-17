@@ -34,9 +34,13 @@ extern "C" {
 /**
  * The lcore role (used in RTE or not).
  */
+// zhou: each thread will occupy a logical core.
 enum rte_lcore_role_t {
+    // zhou: used to run RTE task (mission critical task), such as PMD polling port
 	ROLE_RTE,
+    // zhou: disabled by core mask as user set
 	ROLE_OFF,
+    // zhou: general purpose task, used by librte_eventdev or user defined.
 	ROLE_SERVICE,
 };
 

@@ -5,6 +5,22 @@
 #ifndef _RTE_ETHDEV_H_
 #define _RTE_ETHDEV_H_
 
+// zhou: just like PLIF of SVC, it should export component side interface to upper
+//       level, and export driver side interface to lower level. By this way to
+//       unify the operations differences between PMDs, and let PMDs may allocate
+//       system resource.
+//       Upper level components will use "port_id" to identify a ethdev.
+//       PMD will use "rte_eth_dev" to identify a ethdev.
+//       "rte_eth_dev.data.port_id"
+//
+//       step 0, rte_eth_dev_create()
+//       step 1. rte_eth_dev_configure()
+//       step 2. rte_eth_tx_queue_setup()
+//       step 3. rte_eth_rx_queue_setup()
+//       step 4. rte_eth_dev_start()
+
+
+// zhou: read me carefully !!!
 /**
  * @file
  *
@@ -43,7 +59,7 @@
  * Ethernet devices are dynamically registered during the PCI probing phase
  * performed at EAL initialization time.
  * When an Ethernet device is being probed, an *rte_eth_dev* structure and
- * a new port identifier are allocated for that device. Then, the eth_dev_init()
+ * a new port identifier are allocated for that device. Then, the ethdev_init()
  * function supplied by the Ethernet driver matching the probed PCI
  * device is invoked to properly initialize the device.
  *
@@ -245,6 +261,8 @@ struct rte_eth_stats {
 	uint64_t opackets;  /**< Total number of successfully transmitted packets.*/
 	uint64_t ibytes;    /**< Total number of successfully received bytes. */
 	uint64_t obytes;    /**< Total number of successfully transmitted bytes. */
+
+    // zhou: always due to slow application to handle data.
 	uint64_t imissed;
 	/**< Total of RX packets dropped by the HW,
 	 * because there are no available buffer (i.e. RX queues are full).
@@ -252,6 +270,7 @@ struct rte_eth_stats {
 	uint64_t ierrors;   /**< Total number of erroneous received packets. */
 	uint64_t oerrors;   /**< Total number of failed transmitted packets. */
 	uint64_t rx_nombuf; /**< Total number of RX mbuf allocation failures. */
+
 	uint64_t q_ipackets[RTE_ETHDEV_QUEUE_STAT_CNTRS];
 	/**< Total number of queue RX packets. */
 	uint64_t q_opackets[RTE_ETHDEV_QUEUE_STAT_CNTRS];
@@ -290,7 +309,7 @@ struct rte_eth_stats {
 #define ETH_SPEED_NUM_NONE         0 /**< Not defined */
 #define ETH_SPEED_NUM_10M         10 /**<  10 Mbps */
 #define ETH_SPEED_NUM_100M       100 /**< 100 Mbps */
-#define ETH_SPEED_NUM_1G        1000 /**<   1 Gbps */
+#define ETH_SPEED_NUM_1G       1000 /**<   1 Gbps */
 #define ETH_SPEED_NUM_2_5G      2500 /**< 2.5 Gbps */
 #define ETH_SPEED_NUM_5G        5000 /**<   5 Gbps */
 #define ETH_SPEED_NUM_10G      10000 /**<  10 Gbps */
@@ -301,6 +320,7 @@ struct rte_eth_stats {
 #define ETH_SPEED_NUM_56G      56000 /**<  56 Gbps */
 #define ETH_SPEED_NUM_100G    100000 /**< 100 Gbps */
 
+// zhou: used to describe ethernet link state.
 /**
  * A structure used to retrieve link-level information of an Ethernet port.
  */
@@ -330,6 +350,10 @@ struct rte_eth_thresh {
 	uint8_t wthresh; /**< Ring writeback threshold. */
 };
 
+// zhou: these flags impact RX Multi-queue behavior.
+//       "The VMDQ and DCB filters work on MAC and VLAN traffic to divide the
+//       traffic into input queues on the basis of the Destination MAC address,
+//       VLAN ID and VLAN user priority field."
 /**
  *  Simple flags are used for rte_eth_conf.rxmode.mq_mode.
  */
@@ -392,8 +416,10 @@ enum rte_eth_tx_mq_mode {
  * A structure used to configure the RX features of an Ethernet port.
  */
 struct rte_eth_rxmode {
+    // zhou: normal use "ETH_MQ_RX_RSS".
 	/** The multi-queue packet distribution mode to be used, e.g. RSS. */
 	enum rte_eth_rx_mq_mode mq_mode;
+
 	uint32_t max_rx_pkt_len;  /**< Only used if JUMBO_FRAME enabled. */
 	/** Maximum allowed size of LRO aggregated packet. */
 	uint32_t max_lro_pkt_size;
@@ -446,8 +472,11 @@ struct rte_vlan_filter_conf {
  * Supplying an *rss_hf* equal to zero disables the RSS feature.
  */
 struct rte_eth_rss_conf {
+    // zhou:
 	uint8_t *rss_key;    /**< If not NULL, 40-byte hash key. */
 	uint8_t rss_key_len; /**< hash key length in bytes. */
+
+    // zhou: normal set "ETH_RSS_PROTO_MASK"
 	uint64_t rss_hf;     /**< Hash functions to apply - see below. */
 };
 
@@ -786,6 +815,7 @@ struct rte_eth_vmdq_rx_conf {
 	} pool_map[ETH_VMDQ_MAX_VLAN_FILTERS]; /**< VMDq vlan pool maps. */
 };
 
+
 /**
  * A structure used to configure the TX features of an Ethernet port.
  */
@@ -816,8 +846,10 @@ struct rte_eth_txmode {
  * A structure used to configure an RX ring of an Ethernet port.
  */
 struct rte_eth_rxconf {
+    // zhou: threshold for tunning performance.
 	struct rte_eth_thresh rx_thresh; /**< RX ring threshold registers. */
 	uint16_t rx_free_thresh; /**< Drives the freeing of RX descriptors. */
+
 	uint8_t rx_drop_en; /**< Drop packets if no descriptors are available. */
 	uint8_t rx_deferred_start; /**< Do not start queue with rte_eth_dev_start(). */
 	/**
@@ -841,6 +873,7 @@ struct rte_eth_txconf {
 				      less free descriptors than this value. */
 
 	uint8_t tx_deferred_start; /**< Do not start queue with rte_eth_dev_start(). */
+
 	/**
 	 * Per-queue Tx offloads to be set  using DEV_TX_OFFLOAD_* flags.
 	 * Only offloads set on tx_queue_offload_capa or tx_offload_capa
@@ -1042,7 +1075,9 @@ struct rte_intr_conf {
  * Depending upon the RX multi-queue mode, extra advanced
  * configuration settings may be needed.
  */
+// zhou: core data to config ethdev, looks most of the fields could be set NULL.
 struct rte_eth_conf {
+
 	uint32_t link_speeds; /**< bitmap of ETH_LINK_SPEED_XXX of speeds to be
 				used. ETH_LINK_SPEED_FIXED disables link
 				autonegotiation, and a unique speed shall be
@@ -1050,15 +1085,21 @@ struct rte_eth_conf {
 				speeds to be advertised. If the special value
 				ETH_LINK_SPEED_AUTONEG (0) is used, all speeds
 				supported are advertised. */
+
+    // zhou:
 	struct rte_eth_rxmode rxmode; /**< Port RX configuration. */
 	struct rte_eth_txmode txmode; /**< Port TX configuration. */
+
 	uint32_t lpbk_mode; /**< Loopback operation mode. By default the value
 			         is 0, meaning the loopback mode is disabled.
 				 Read the datasheet of given ethernet controller
 				 for details. The possible values of this field
 				 are defined in implementation of each driver. */
+
+    // zhou: advanced RX config.
 	struct {
 		struct rte_eth_rss_conf rss_conf; /**< Port RSS configuration */
+
 		struct rte_eth_vmdq_dcb_conf vmdq_dcb_conf;
 		/**< Port vmdq+dcb configuration. */
 		struct rte_eth_dcb_rx_conf dcb_rx_conf;
@@ -1066,6 +1107,8 @@ struct rte_eth_conf {
 		struct rte_eth_vmdq_rx_conf vmdq_rx_conf;
 		/**< Port vmdq RX configuration. */
 	} rx_adv_conf; /**< Port RX filtering configuration. */
+
+    // zhou: advanced TX config.
 	union {
 		struct rte_eth_vmdq_dcb_tx_conf vmdq_dcb_tx_conf;
 		/**< Port vmdq+dcb TX configuration. */
@@ -1074,6 +1117,8 @@ struct rte_eth_conf {
 		struct rte_eth_vmdq_tx_conf vmdq_tx_conf;
 		/**< Port vmdq TX configuration. */
 	} tx_adv_conf; /**< Port TX DCB configuration (union). */
+
+
 	/** Currently,Priority Flow Control(PFC) are supported,if DCB with PFC
 	    is needed,and the variable must be set ETH_DCB_PFC_SUPPORT. */
 	uint32_t dcb_capability_en;
@@ -1088,14 +1133,19 @@ struct rte_eth_conf {
 #define DEV_RX_OFFLOAD_IPV4_CKSUM  0x00000002
 #define DEV_RX_OFFLOAD_UDP_CKSUM   0x00000004
 #define DEV_RX_OFFLOAD_TCP_CKSUM   0x00000008
+
+// zhou: deprecated HW feature.
 #define DEV_RX_OFFLOAD_TCP_LRO     0x00000010
+
 #define DEV_RX_OFFLOAD_QINQ_STRIP  0x00000020
 #define DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM 0x00000040
 #define DEV_RX_OFFLOAD_MACSEC_STRIP     0x00000080
 #define DEV_RX_OFFLOAD_HEADER_SPLIT	0x00000100
 #define DEV_RX_OFFLOAD_VLAN_FILTER	0x00000200
 #define DEV_RX_OFFLOAD_VLAN_EXTEND	0x00000400
+// zhou: NOT equal to MTU Jumbo Frame.
 #define DEV_RX_OFFLOAD_JUMBO_FRAME	0x00000800
+
 #define DEV_RX_OFFLOAD_SCATTER		0x00002000
 #define DEV_RX_OFFLOAD_TIMESTAMP	0x00004000
 #define DEV_RX_OFFLOAD_SECURITY         0x00008000
@@ -1121,12 +1171,17 @@ struct rte_eth_conf {
  * TX offload capabilities of a device.
  */
 #define DEV_TX_OFFLOAD_VLAN_INSERT 0x00000001
+
 #define DEV_TX_OFFLOAD_IPV4_CKSUM  0x00000002
 #define DEV_TX_OFFLOAD_UDP_CKSUM   0x00000004
 #define DEV_TX_OFFLOAD_TCP_CKSUM   0x00000008
 #define DEV_TX_OFFLOAD_SCTP_CKSUM  0x00000010
+
 #define DEV_TX_OFFLOAD_TCP_TSO     0x00000020
+// zhou: UDP GSO perform same action as with IP Fragment.
+//       But no HW support it right now.
 #define DEV_TX_OFFLOAD_UDP_TSO     0x00000040
+
 #define DEV_TX_OFFLOAD_OUTER_IPV4_CKSUM 0x00000080 /**< Used for tunneling packet. */
 #define DEV_TX_OFFLOAD_QINQ_INSERT 0x00000100
 #define DEV_TX_OFFLOAD_VXLAN_TNL_TSO    0x00000200    /**< Used for tunneling packet. */
@@ -1138,13 +1193,21 @@ struct rte_eth_conf {
 /**< Multiple threads can invoke rte_eth_tx_burst() concurrently on the same
  * tx queue without SW lock.
  */
+
+// zhou: each IP packet, could be composited with several segments.
+//       Once HW doesn't not support this feature, it doesn't matter.
+//       Each segment will be allocated one descriptor in TX ring, but the ring
+//       size must be greater than segment number. Otherwise, rte_pktmbuf_linearize()
+//       will be used.
 #define DEV_TX_OFFLOAD_MULTI_SEGS	0x00008000
 /**< Device supports multi segment send. */
+
 #define DEV_TX_OFFLOAD_MBUF_FAST_FREE	0x00010000
 /**< Device supports optimization for fast release of mbufs.
  *   When set application must guarantee that per-queue all mbufs comes from
  *   the same mempool and has refcnt = 1.
  */
+
 #define DEV_TX_OFFLOAD_SECURITY         0x00020000
 /**
  * Device supports generic UDP tunneled packet TSO.
@@ -1223,6 +1286,7 @@ struct rte_eth_switch_info {
  * an Ethernet device, such as the controlling driver of the
  * device, etc...
  */
+// zhou: device hardware limitation fetched from driver.
 struct rte_eth_dev_info {
 	struct rte_device *device; /** Generic device information */
 	const char *driver_name; /**< Device Driver name. */
@@ -1231,17 +1295,20 @@ struct rte_eth_dev_info {
 	uint16_t min_mtu;	/**< Minimum MTU allowed */
 	uint16_t max_mtu;	/**< Maximum MTU allowed */
 	const uint32_t *dev_flags; /**< Device flags */
+
 	uint32_t min_rx_bufsize; /**< Minimum size of RX buffer. */
 	uint32_t max_rx_pktlen; /**< Maximum configurable length of RX pkt. */
 	/** Maximum configurable size of LRO aggregated packet. */
 	uint32_t max_lro_pkt_size;
 	uint16_t max_rx_queues; /**< Maximum number of RX queues. */
 	uint16_t max_tx_queues; /**< Maximum number of TX queues. */
+
 	uint32_t max_mac_addrs; /**< Maximum number of MAC addresses. */
 	uint32_t max_hash_mac_addrs;
 	/** Maximum number of hash MAC addresses for MTA and UTA. */
 	uint16_t max_vfs; /**< Maximum number of VFs. */
 	uint16_t max_vmdq_pools; /**< Maximum number of VMDq pools. */
+
 	uint64_t rx_offload_capa;
 	/**< All RX offload capabilities including all per-queue ones */
 	uint64_t tx_offload_capa;
@@ -1249,29 +1316,41 @@ struct rte_eth_dev_info {
 	uint64_t rx_queue_offload_capa;
 	/**< Device per-queue RX offload capabilities. */
 	uint64_t tx_queue_offload_capa;
+
 	/**< Device per-queue TX offload capabilities. */
 	uint16_t reta_size;
 	/**< Device redirection table size, the total number of entries. */
 	uint8_t hash_key_size; /**< Hash key size in bytes */
 	/** Bit mask of RSS offloads, the bit offset also means flow type */
 	uint64_t flow_type_rss_offloads;
+
+    // zhou: used to setup TX/RX queues.
 	struct rte_eth_rxconf default_rxconf; /**< Default RX configuration */
 	struct rte_eth_txconf default_txconf; /**< Default TX configuration */
+
 	uint16_t vmdq_queue_base; /**< First queue ID for VMDQ pools. */
 	uint16_t vmdq_queue_num;  /**< Queue number for VMDQ pools. */
 	uint16_t vmdq_pool_base;  /**< First ID of VMDQ pools. */
+
 	struct rte_eth_desc_lim rx_desc_lim;  /**< RX descriptors limits */
 	struct rte_eth_desc_lim tx_desc_lim;  /**< TX descriptors limits */
+
 	uint32_t speed_capa;  /**< Supported speeds bitmap (ETH_LINK_SPEED_). */
+
+    // zhou: already configured which fetched from HW or driver.
 	/** Configured number of rx/tx queues */
 	uint16_t nb_rx_queues; /**< Number of RX queues. */
 	uint16_t nb_tx_queues; /**< Number of TX queues. */
+
+    // zhou: driver's recommendation.
 	/** Rx parameter recommendations */
 	struct rte_eth_dev_portconf default_rxportconf;
 	/** Tx parameter recommendations */
 	struct rte_eth_dev_portconf default_txportconf;
+
 	/** Generic device capabilities (RTE_ETH_DEV_CAPA_). */
 	uint64_t dev_capa;
+
 	/**
 	 * Switching information for ports on a device with a
 	 * embedded managed interconnect/switch.
@@ -1290,6 +1369,7 @@ struct rte_eth_rxq_info {
 	struct rte_mempool *mp;     /**< mempool used by that queue. */
 	struct rte_eth_rxconf conf; /**< queue config parameters. */
 	uint8_t scattered_rx;       /**< scattered packets RX supported. */
+
 	uint16_t nb_desc;           /**< configured number of RXDs. */
 } __rte_cache_min_aligned;
 
@@ -1299,6 +1379,7 @@ struct rte_eth_rxq_info {
  */
 struct rte_eth_txq_info {
 	struct rte_eth_txconf conf; /**< queue config parameters. */
+
 	uint16_t nb_desc;           /**< configured number of TXDs. */
 } __rte_cache_min_aligned;
 
@@ -1483,6 +1564,7 @@ struct rte_eth_dev_sriov {
 
 #define RTE_ETH_NAME_MAX_LEN RTE_DEV_NAME_MAX_LEN
 
+// zhou: No other option.
 #define RTE_ETH_DEV_NO_OWNER 0
 
 #define RTE_ETH_MAX_OWNER_NAME_LEN 64
@@ -1543,6 +1625,13 @@ uint16_t rte_eth_find_next(uint16_t port_id);
 /**
  * Macro to iterate over all enabled and ownerless ethdev ports.
  */
+// zhou: firstly, "dpdk-devbind.py" should bind PCI driver with all DPDK allowed
+//       access NICs.
+//       Then, blacklist or whitelist define which NIC could be probed by current
+//       DPDK instance.
+//       When probling successfully, could be accessed via this function.
+//       "p" is iterator, indicate search begins from, then p will be updated the
+//       first port id which accessable.
 #define RTE_ETH_FOREACH_DEV(p) \
 	RTE_ETH_FOREACH_DEV_OWNED_BY(p, RTE_ETH_DEV_NO_OWNER)
 
@@ -1787,6 +1876,7 @@ const char *rte_eth_dev_tx_offload_name(uint64_t offload);
  *   - 0: Success, device configured.
  *   - <0: Error code returned by the driver configuration function.
  */
+// zhou: configure port when stopped.
 int rte_eth_dev_configure(uint16_t port_id, uint16_t nb_rx_queue,
 		uint16_t nb_tx_queue, const struct rte_eth_conf *eth_conf);
 
@@ -2820,9 +2910,14 @@ typedef void (*buffer_tx_error_fn)(struct rte_mbuf **unsent, uint16_t count,
  * Used by APIs rte_eth_tx_buffer and rte_eth_tx_buffer_flush
  */
 struct rte_eth_dev_tx_buffer {
+    // zhou: callback function when sending failed async.
 	buffer_tx_error_fn error_callback;
 	void *error_userdata;
+
+    // zhou: threshold to send in burst
 	uint16_t size;           /**< Size of buffer for buffered tx */
+
+    // zhou: already buffered packets.
 	uint16_t length;         /**< Number of packets in the array */
 	struct rte_mbuf *pkts[];
 	/**< Pending packets to be sent on explicit flush or when full */
@@ -2999,6 +3094,7 @@ struct rte_eth_event_ipsec_desc {
 			 */
 };
 
+// zhou: Ethdev event reported via interrupt.
 /**
  * The eth device event type for interrupt, and maybe others in the future.
  */
@@ -3959,6 +4055,7 @@ rte_eth_dev_get_module_eeprom(uint16_t port_id,
  *   - (-ENOTSUP) if PMD of *port_id* doesn't support multicast filtering.
  *   - (-ENOSPC) if *port_id* has not enough multicast filtering resources.
  */
+// zhou: manage Mulitcast IP list which filtered by NIC.
 int rte_eth_dev_set_mc_addr_list(uint16_t port_id,
 				 struct rte_ether_addr *mc_addr_set,
 				 uint32_t nb_mc_addr);
@@ -4368,6 +4465,10 @@ int rte_eth_dev_hairpin_capability_get(uint16_t port_id,
  *   of pointers to *rte_mbuf* structures effectively supplied to the
  *   *rx_pkts* array.
  */
+
+// zhou: the mbuf fill with received packets will be linked to "rx_pkts". At the
+//       same time, new mbuf will be allocated from mbuf pool to RX descriptor.
+//       NIC continus work to received data, no need wait for releasing mbufs.
 static inline uint16_t
 rte_eth_rx_burst(uint16_t port_id, uint16_t queue_id,
 		 struct rte_mbuf **rx_pkts, const uint16_t nb_pkts)
@@ -4384,6 +4485,8 @@ rte_eth_rx_burst(uint16_t port_id, uint16_t queue_id,
 		return 0;
 	}
 #endif
+
+    // zhou: e.g. "ixgbe_recv_pkts()"
 	nb_rx = (*dev->rx_pkt_burst)(dev->data->rx_queues[queue_id],
 				     rx_pkts, nb_pkts);
 
@@ -4415,6 +4518,7 @@ rte_eth_rx_burst(uint16_t port_id, uint16_t queue_id,
  *     (-EINVAL) if *port_id* or *queue_id* is invalid
  *     (-ENOTSUP) if the device does not support this function
  */
+// zhou: get the number of RX descriptors already hold packets.
 static inline int
 rte_eth_rx_queue_count(uint16_t port_id, uint16_t queue_id)
 {
@@ -4426,6 +4530,7 @@ rte_eth_rx_queue_count(uint16_t port_id, uint16_t queue_id)
 	if (queue_id >= dev->data->nb_rx_queues)
 		return -EINVAL;
 
+    // zhou: "ixgbe_dev_rx_queue_count()"
 	return (int)(*dev->dev_ops->rx_queue_count)(dev, queue_id);
 }
 
@@ -4444,12 +4549,15 @@ rte_eth_rx_queue_count(uint16_t port_id, uint16_t queue_id)
  *  - (-ENODEV) if *port_id* invalid.
  *  - (-ENOTSUP) if the device does not support this function
  */
+// zhou: HW already fill this descriptor with received packet.
 static inline int
 rte_eth_rx_descriptor_done(uint16_t port_id, uint16_t queue_id, uint16_t offset)
 {
 	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
 	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, -ENODEV);
 	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->rx_descriptor_done, -ENOTSUP);
+
+    // zhou: "ixgbe_dev_rx_descriptor_done()"
 	return (*dev->dev_ops->rx_descriptor_done)( \
 		dev->data->rx_queues[queue_id], offset);
 }
@@ -4491,6 +4599,7 @@ rte_eth_rx_descriptor_done(uint16_t port_id, uint16_t queue_id, uint16_t offset)
  *  - (-ENOTSUP) if the device does not support this function.
  *  - (-ENODEV) bad port or queue (only if compiled with debug).
  */
+// zhou: used to check this RX descriptor status. Get "RTE_ETH_RX_DESC_XXX".
 static inline int
 rte_eth_rx_descriptor_status(uint16_t port_id, uint16_t queue_id,
 	uint16_t offset)
@@ -4549,6 +4658,7 @@ rte_eth_rx_descriptor_status(uint16_t port_id, uint16_t queue_id,
  *  - (-ENOTSUP) if the device does not support this function.
  *  - (-ENODEV) bad port or queue (only if compiled with debug).
  */
+// zhou: used to check this TX descriptor status. Get "RTE_ETH_TX_DESC_XXX".
 static inline int rte_eth_tx_descriptor_status(uint16_t port_id,
 	uint16_t queue_id, uint16_t offset)
 {
@@ -4566,6 +4676,7 @@ static inline int rte_eth_tx_descriptor_status(uint16_t port_id,
 	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->tx_descriptor_status, -ENOTSUP);
 	txq = dev->data->tx_queues[queue_id];
 
+    // zhou: "ixgbe_dev_tx_descriptor_status()"
 	return (*dev->dev_ops->tx_descriptor_status)(txq, offset);
 }
 
@@ -4635,6 +4746,13 @@ static inline int rte_eth_tx_descriptor_status(uint16_t port_id,
  *   the transmit ring. The return value can be less than the value of the
  *   *tx_pkts* parameter when the transmit ring is full or has been filled up.
  */
+// zhou: 1. Pick up the next available descriptor in the transmit ring.
+//       2. Free the network buffer previously sent with that descriptor, if any.
+//       3. Initialize the transmit descriptor with the information provided
+//          in the *rte_mbuf data structure.
+//       Pay attention to:  1. should run on a dataplane core;
+//                          2. not concurrently on the same queue
+
 static inline uint16_t
 rte_eth_tx_burst(uint16_t port_id, uint16_t queue_id,
 		 struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
@@ -4663,6 +4781,7 @@ rte_eth_tx_burst(uint16_t port_id, uint16_t queue_id,
 	}
 #endif
 
+    // zhou: "ixgbe_xmit_pkts()"
 	return (*dev->tx_pkt_burst)(dev->data->tx_queues[queue_id], tx_pkts, nb_pkts);
 }
 
@@ -4720,7 +4839,7 @@ rte_eth_tx_burst(uint16_t port_id, uint16_t queue_id,
  */
 
 #ifndef RTE_ETHDEV_TX_PREPARE_NOOP
-
+// zhou: validate and update checksum
 static inline uint16_t
 rte_eth_tx_prepare(uint16_t port_id, uint16_t queue_id,
 		struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
@@ -4748,6 +4867,7 @@ rte_eth_tx_prepare(uint16_t port_id, uint16_t queue_id,
 	if (!dev->tx_pkt_prepare)
 		return nb_pkts;
 
+    // zhou: "ixgbe_prep_pkts()"
 	return (*dev->tx_pkt_prepare)(dev->data->tx_queues[queue_id],
 			tx_pkts, nb_pkts);
 }
@@ -4795,6 +4915,8 @@ rte_eth_tx_prepare(__rte_unused uint16_t port_id,
  *   The number of packets successfully sent to the Ethernet device. The error
  *   callback is called for any packets which could not be sent.
  */
+// zhou: send all buffered packets. Once error happened, invoking callback function
+//       to handle it.
 static inline uint16_t
 rte_eth_tx_buffer_flush(uint16_t port_id, uint16_t queue_id,
 		struct rte_eth_dev_tx_buffer *buffer)
@@ -4848,6 +4970,9 @@ rte_eth_tx_buffer_flush(uint16_t port_id, uint16_t queue_id,
  *     causing N packets to be sent, and the error callback to be called for
  *     the rest.
  */
+// zhou: buffer a packet each time, and send out when reached threshold.
+//       I suppose it used in case of app don't want take care of batch sending.
+//       There is no expired timer, so the last packet will keep in buffer.
 static __rte_always_inline uint16_t
 rte_eth_tx_buffer(uint16_t port_id, uint16_t queue_id,
 		struct rte_eth_dev_tx_buffer *buffer, struct rte_mbuf *tx_pkt)

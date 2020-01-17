@@ -13,9 +13,12 @@
 
 #include "eal_private.h"
 
+
+// zhou: registered bus type list
 static struct rte_bus_list rte_bus_list =
 	TAILQ_HEAD_INITIALIZER(rte_bus_list);
 
+// zhou: register bus, add a new bus type to "rte_bus_list", e.g. vdev bus.
 void
 rte_bus_register(struct rte_bus *bus)
 {
@@ -29,6 +32,7 @@ rte_bus_register(struct rte_bus *bus)
 	RTE_VERIFY(!bus->plug || bus->unplug);
 
 	TAILQ_INSERT_TAIL(&rte_bus_list, bus, next);
+
 	RTE_LOG(DEBUG, EAL, "Registered [%s] bus.\n", bus->name);
 }
 
@@ -39,6 +43,7 @@ rte_bus_unregister(struct rte_bus *bus)
 	RTE_LOG(DEBUG, EAL, "Unregistered [%s] bus.\n", bus->name);
 }
 
+// zhou: scan all buses and related device when dpdk instace start.
 /* Scan all the buses for registered devices */
 int
 rte_bus_scan(void)
@@ -47,7 +52,10 @@ rte_bus_scan(void)
 	struct rte_bus *bus = NULL;
 
 	TAILQ_FOREACH(bus, &rte_bus_list, next) {
+        // zhou: invoke register bus scan callback function,
+        //       e.g. "rte_pci_scan()", "vdev_scan()"
 		ret = bus->scan();
+
 		if (ret)
 			RTE_LOG(ERR, EAL, "Scan for (%s) bus failed.\n",
 				bus->name);
@@ -56,6 +64,7 @@ rte_bus_scan(void)
 	return 0;
 }
 
+// zhou: probe all devices within all buses, includes vdev bus.
 /* Probe all devices of all buses */
 int
 rte_bus_probe(void)
@@ -68,13 +77,15 @@ rte_bus_probe(void)
 			vbus = bus;
 			continue;
 		}
-
+        // zhou: e.g. "rte_pci_probe()", "vdev_probe()"
 		ret = bus->probe();
 		if (ret)
 			RTE_LOG(ERR, EAL, "Bus (%s) probe failed.\n",
 				bus->name);
 	}
 
+    // zhou: due to bonding ethdev which running on "vdev" bus, depends on
+    //       physical bus and device. So, we defer "vdev" device probing.
 	if (vbus) {
 		ret = vbus->probe();
 		if (ret)
@@ -127,6 +138,7 @@ rte_bus_find(const struct rte_bus *start, rte_bus_cmp_t cmp,
 		bus = TAILQ_NEXT(start, next);
 	else
 		bus = TAILQ_FIRST(&rte_bus_list);
+
 	while (bus != NULL) {
 		if (cmp(bus, data) == 0)
 			break;

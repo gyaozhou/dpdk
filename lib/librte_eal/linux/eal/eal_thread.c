@@ -33,6 +33,12 @@ RTE_DEFINE_PER_LCORE(rte_cpuset_t, _cpuset);
  * function f with argument arg. Once the execution is done, the
  * remote lcore switch in FINISHED state.
  */
+// zhou: here slave lcore means slave thread which already created, but
+//       stay in state "WAIT".
+//       The MASTER lcore returns as soon as the message is sent and knows
+//       nothing about the completion of f. Need to use rte_eal_wait_lcore().
+//
+//       This launch function could be used on the MASTER lcore only.
 int
 rte_eal_remote_launch(int (*f)(void *), void *arg, unsigned slave_id)
 {
@@ -78,6 +84,7 @@ eal_thread_set_affinity(void)
 	return rte_thread_set_affinity(&lcore_config[lcore_id].cpuset);
 }
 
+// zhou: set thread local variable, and bind to CPU Set
 void eal_thread_init_master(unsigned lcore_id)
 {
 	/* set the lcore ID in per-lcore memory area */
@@ -88,6 +95,7 @@ void eal_thread_init_master(unsigned lcore_id)
 		rte_panic("cannot set affinity\n");
 }
 
+// zhou: slave lcore will wait for message from master lcore.
 /* main loop of threads */
 __attribute__((noreturn)) void *
 eal_thread_loop(__attribute__((unused)) void *arg)
@@ -128,6 +136,8 @@ eal_thread_loop(__attribute__((unused)) void *arg)
 	while (1) {
 		void *fct_arg;
 
+        // zhou: block waiting for master lcore launch function.
+        //       Not busy loop, so CPU resource will not be wasted.
 		/* wait command */
 		do {
 			n = read(m2s, &c, 1);
@@ -150,7 +160,11 @@ eal_thread_loop(__attribute__((unused)) void *arg)
 
 		/* call the function and store the return value */
 		fct_arg = lcore_config[lcore_id].arg;
+
+
+        // zhou: data plane or service task.
 		ret = lcore_config[lcore_id].f(fct_arg);
+
 		lcore_config[lcore_id].ret = ret;
 		rte_wmb();
 
@@ -174,6 +188,7 @@ int rte_sys_gettid(void)
 	return (int)syscall(SYS_gettid);
 }
 
+// zhou: cat /proc/xxx/comm
 int rte_thread_setname(pthread_t id, const char *name)
 {
 	int ret = ENOSYS;

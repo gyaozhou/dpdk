@@ -18,17 +18,54 @@ enum elem_state {
 	ELEM_PAD  /* element is a padding-only header */
 };
 
+// zhou: 1. "As a header on a block of free or allocated memory - normal case"
+//       2. "As a padding header inside a block of memory"
+
 struct malloc_elem {
+    // zhou: "this pointer is a reference back to the heap structure from which this block was
+    //        allocated. It is used for normal memory blocks when they are being freed, to add the
+    //        newly-freed block to the heap’s free-list."
 	struct malloc_heap *heap;
+
+    // zhou: "this pointer points to previous header element/block in memory. When freeing a
+    //        block, this pointer is used to reference the previous block to check if that block is also
+    //        free. If so, and the two blocks are immediately adjacent to each other, then the two free
+    //        blocks are merged to form a single larger block."
 	struct malloc_elem *volatile prev;
 	/**< points to prev elem in memseg */
+
+    // zhou: "this pointer points to next header element/block in memory. When freeing a block,
+    //        this pointer is used to reference the next block to check if that block is also free. If so,
+    //        and the two blocks are immediately adjacent to each other, then the two free blocks are
+    //        merged to form a single larger block."
 	struct malloc_elem *volatile next;
 	/**< points to next elem in memseg */
+
+    // zhou: "this is a structure pointing to previous and next elements in this heap’s free list.
+    //        It is only used in normal memory blocks; on malloc() to find a suitable free block to
+    //        allocate and on free() to add the newly freed element to the free-list."
 	LIST_ENTRY(malloc_elem) free_list;
+
 	/**< list of free elements in heap */
 	struct rte_memseg_list *msl;
+
+    // zhou: "This field can have one of three values: FREE, BUSY or PAD. The former two are
+    //        to indicate the allocation state of a normal memory block and the latter is to indicate that
+    //        the element structure is a dummy structure at the end of the start-of-block padding, i.e.
+    //        where the start of the data within a block is not at the start of the block itself, due to
+    //        alignment constraints. In that case, the pad header is used to locate the actual malloc
+    //        element header for the block."
 	volatile enum elem_state state;
+
+    // zhou: "this holds the length of the padding present at the start of the block. In the case
+    //        of a normal block header, it is added to the address of the end of the header to give the
+    //        address of the start of the data area, i.e. the value passed back to the application on
+    //        a malloc. Within a dummy header inside the padding, this same value is stored, and is
+    //        subtracted from the address of the dummy header to yield the address of the actual block
+    //        header."
 	uint32_t pad;
+
+    // zhou: "the size of the data block, including the header itself"
 	size_t size;
 	struct malloc_elem *orig_elem;
 	size_t orig_size;
@@ -37,6 +74,8 @@ struct malloc_elem {
 	                                /* trailer cookie at start + size */
 #endif
 } __rte_cache_aligned;
+
+
 
 #ifndef RTE_MALLOC_DEBUG
 static const unsigned MALLOC_ELEM_TRAILER_LEN = 0;

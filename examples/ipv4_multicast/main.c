@@ -301,16 +301,20 @@ mcast_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf)
 	uint32_t dest_addr, port_mask, port_num, use_clone;
 	int32_t hash;
 	uint16_t port;
+
 	union {
 		uint64_t as_int;
 		struct rte_ether_addr as_addr;
 	} dst_eth_addr;
 
+    // zhou: remove Ethernet header, since Router don't care.
+    //       But we should keep Src and Dst IP address intact.
 	/* Remove the Ethernet header from the input packet */
 	iphdr = (struct rte_ipv4_hdr *)
 		rte_pktmbuf_adj(m, (uint16_t)sizeof(struct rte_ether_hdr));
 	RTE_ASSERT(iphdr != NULL);
 
+    // zhou: Dst IP address.
 	dest_addr = rte_be_to_cpu_32(iphdr->dst_addr);
 
 	/*
@@ -335,9 +339,11 @@ mcast_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf)
 	if (use_clone == 0)
 		rte_pktmbuf_refcnt_update(m, (uint16_t)port_num);
 
+    // zhou: convert from Multicast IP address to Multicast L2 address.
 	/* construct destination ethernet address */
 	dst_eth_addr.as_int = ETHER_ADDR_FOR_IPV4_MCAST(dest_addr);
 
+    // zhou: if clone, we need N-1 mcast_out_pkt(); else, we need N.
 	for (port = 0; use_clone != port_mask; port_mask >>= 1, port++) {
 
 		/* Prepare output packet and send it out. */
@@ -629,6 +635,12 @@ check_all_ports_link_status(uint32_t port_mask)
 	}
 }
 
+// zhou: this function work as router, which receive one Multicast packet, then
+//       flood to many ports specified in CLI.
+//       Unlike switch, router need to change L2 information.
+//       So, one packet will be sent to several ports. They share same packet
+//       body (received from one port), but use different head for different
+//       output packets.
 int
 main(int argc, char **argv)
 {
@@ -653,25 +665,34 @@ main(int argc, char **argv)
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Invalid IPV4_MULTICAST parameters\n");
 
+
 	/* create the mbuf pools */
+
+    // zhou: used to receive Multicast packets
 	packet_pool = rte_pktmbuf_pool_create("packet_pool", NB_PKT_MBUF, 32,
 		0, PKT_MBUF_DATA_SIZE, rte_socket_id());
 
 	if (packet_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init packet mbuf pool\n");
 
+    // zhou: NB_HDR_MBUF ==	(NB_PKT_MBUF * MAX_PORTS), used to create new L2
+    //       head.
 	header_pool = rte_pktmbuf_pool_create("header_pool", NB_HDR_MBUF, 32,
 		0, HDR_MBUF_DATA_SIZE, rte_socket_id());
 
 	if (header_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init header mbuf pool\n");
 
+    // zhou: NB_CLONE_MBUF == (NB_PKT_MBUF * MCAST_CLONE_PORTS * MCAST_CLONE_SEGS * 2)
+    //       why need "* 2"?
 	clone_pool = rte_pktmbuf_pool_create("clone_pool", NB_CLONE_MBUF, 32,
 		0, 0, rte_socket_id());
 
 	if (clone_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init clone mbuf pool\n");
 
+
+    // zhou: check Ethdev port number.
 	nb_ports = rte_eth_dev_count_avail();
 	if (nb_ports == 0)
 		rte_exit(EXIT_FAILURE, "No physical ports!\n");
@@ -714,6 +735,7 @@ main(int argc, char **argv)
 			if (rx_lcore_id >= RTE_MAX_LCORE)
 				rte_exit(EXIT_FAILURE, "Not enough cores\n");
 		}
+
 		qconf->rx_queue_list[qconf->n_rx_queue] = portid;
 		qconf->n_rx_queue++;
 
@@ -739,6 +761,7 @@ main(int argc, char **argv)
 				 "Cannot adjust number of descriptors: err=%d, port=%d\n",
 				 ret, portid);
 
+        // zhou: local L2 MAC for each port.
 		ret = rte_eth_macaddr_get(portid, &ports_eth_addr[portid]);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE,
@@ -783,6 +806,7 @@ main(int argc, char **argv)
 			qconf->tx_queue_id[portid] = queueid;
 			queueid++;
 		}
+        // zhou: enable multicast promiscious mode.
 		ret = rte_eth_allmulticast_enable(portid);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE,
@@ -806,6 +830,7 @@ main(int argc, char **argv)
 
 	/* launch per-lcore init on every lcore */
 	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MASTER);
+
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
 		if (rte_eal_wait_lcore(lcore_id) < 0)
 			return -1;

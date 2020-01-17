@@ -14,6 +14,8 @@ extern "C" {
 #include <emmintrin.h>
 static inline void rte_pause(void)
 {
+    // zhou: avoid to context switch which improve performance of spinlock and
+    //       may save power.
 	_mm_pause();
 }
 

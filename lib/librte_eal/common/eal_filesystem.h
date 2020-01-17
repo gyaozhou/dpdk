@@ -21,6 +21,8 @@
 #include <rte_string_fns.h>
 #include "eal_internal_cfg.h"
 
+// zhou: this file defines runtime dir files
+
 /* sets up platform-specific runtime data dir */
 int
 eal_create_runtime_dir(void);
@@ -32,6 +34,8 @@ eal_clean_runtime_dir(void);
 const char *
 eal_get_hugefile_prefix(void);
 
+// zhou: "/var/run/dpdk/xxx/config", used to store "rte_config.mem_config",
+//       data structure "struct rte_mem_config".
 #define RUNTIME_CONFIG_FNAME "config"
 static inline const char *
 eal_runtime_config_path(void)
@@ -43,6 +47,7 @@ eal_runtime_config_path(void)
 	return buffer;
 }
 
+// zhou: "/var/run/dpdk/xxx/mp_socket"
 /** Path of primary/secondary communication unix socket file. */
 #define MP_SOCKET_FNAME "mp_socket"
 static inline const char *
@@ -63,6 +68,7 @@ eal_get_fbarray_path(char *buffer, size_t buflen, const char *name) {
 	return buffer;
 }
 
+// zhou: "/var/run/dpdk/xxx/hugepage_info"
 /** Path of hugepage info file. */
 #define HUGEPAGE_INFO_FNAME "hugepage_info"
 static inline const char *
@@ -75,6 +81,7 @@ eal_hugepage_info_path(void)
 	return buffer;
 }
 
+// zhou: "/var/run/dpdk/xxx/hugepage_data"
 /** Path of hugepage data file. */
 #define HUGEPAGE_DATA_FNAME "hugepage_data"
 static inline const char *
@@ -87,6 +94,7 @@ eal_hugepage_data_path(void)
 	return buffer;
 }
 
+// zhou:
 /** String format for hugepage map files. */
 #define HUGEFILE_FMT "%s/%smap_%d"
 static inline const char *

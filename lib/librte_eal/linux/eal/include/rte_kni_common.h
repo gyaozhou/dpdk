@@ -56,6 +56,7 @@ struct rte_kni_request {
  * Write and read should wrap around. Fifo is empty when write == read
  * Writing should never overwrite the read position
  */
+// zhou:
 struct rte_kni_fifo {
 #ifdef RTE_USE_C11_MEM_MODEL
 	unsigned write;              /**< Next position to be written*/
@@ -94,10 +95,12 @@ struct rte_kni_mbuf {
 /*
  * Struct used to create a KNI device. Passed to the kernel in IOCTL call
  */
-
+// zhou: KNI internal used data structure.
 struct rte_kni_device_info {
+    // zhou: ethernet format
 	char name[RTE_KNI_NAMESIZE];  /**< Network device name for KNI */
 
+    // zhou:
 	phys_addr_t tx_phys;
 	phys_addr_t rx_phys;
 	phys_addr_t alloc_phys;

@@ -339,7 +339,7 @@ release(struct rte_distributor *d, unsigned int wkr)
 
 }
 
-
+// zhou:
 /* process a set of packets to distribute them to workers */
 int
 rte_distributor_process(struct rte_distributor *d,

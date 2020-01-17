@@ -41,8 +41,11 @@
 #define KNI_RX_Q_MZ_NAME_FMT		"kni_rx_%s"
 #define KNI_ALLOC_Q_MZ_NAME_FMT		"kni_alloc_%s"
 #define KNI_FREE_Q_MZ_NAME_FMT		"kni_free_%s"
+
+// zhou: used to request/response eth config commands, e.g. change MTU,
 #define KNI_REQ_Q_MZ_NAME_FMT		"kni_req_%s"
 #define KNI_RESP_Q_MZ_NAME_FMT		"kni_resp_%s"
+
 #define KNI_SYNC_ADDR_MZ_NAME_FMT	"kni_sync_%s"
 
 TAILQ_HEAD(rte_kni_list, rte_tailq_entry);
@@ -55,6 +58,7 @@ EAL_REGISTER_TAILQ(rte_kni_tailq)
 /**
  * KNI context
  */
+// zhou:
 struct rte_kni {
 	char name[RTE_KNI_NAMESIZE];        /**< KNI interface name */
 	uint16_t group_id;                  /**< Group ID of KNI devices */
@@ -62,16 +66,20 @@ struct rte_kni {
 	struct rte_mempool *pktmbuf_pool;   /**< pkt mbuf mempool */
 	unsigned int mbuf_size;                 /**< mbuf size */
 
+    // zhou: all "struct rte_memzone" provide physical/virtual to vEth/DPDK.
+    //       Then they can send/recv message between them.
 	const struct rte_memzone *m_tx_q;   /**< TX queue memzone */
 	const struct rte_memzone *m_rx_q;   /**< RX queue memzone */
 	const struct rte_memzone *m_alloc_q;/**< Alloc queue memzone */
 	const struct rte_memzone *m_free_q; /**< Free queue memzone */
 
+    // zhou: used to tx/rx packets.
 	struct rte_kni_fifo *tx_q;          /**< TX queue */
 	struct rte_kni_fifo *rx_q;          /**< RX queue */
 	struct rte_kni_fifo *alloc_q;       /**< Allocated mbufs queue */
 	struct rte_kni_fifo *free_q;        /**< To be freed mbufs queue */
 
+    // zhou: used for config command
 	const struct rte_memzone *m_req_q;  /**< Request queue memzone */
 	const struct rte_memzone *m_resp_q; /**< Response queue memzone */
 	const struct rte_memzone *m_sync_addr;/**< Sync addr memzone */
@@ -92,8 +100,10 @@ enum kni_ops_status {
 static void kni_free_mbufs(struct rte_kni *kni);
 static void kni_allocate_mbufs(struct rte_kni *kni);
 
+// zhou: fd for ioctl().
 static volatile int kni_fd = -1;
 
+// zhou: just open /dev/kni device.
 /* Shall be called before any allocation happens */
 int
 rte_kni_init(unsigned int max_kni_ifaces __rte_unused)
@@ -202,6 +212,7 @@ kni_release_mz(struct rte_kni *kni)
 	rte_memzone_free(kni->m_sync_addr);
 }
 
+// zhou: create KNI NIC.
 struct rte_kni *
 rte_kni_alloc(struct rte_mempool *pktmbuf_pool,
 	      const struct rte_kni_conf *conf,
@@ -249,6 +260,7 @@ rte_kni_alloc(struct rte_mempool *pktmbuf_pool,
 	else
 		kni->ops.port_id = UINT16_MAX;
 
+
 	memset(&dev_info, 0, sizeof(dev_info));
 	dev_info.core_id = conf->core_id;
 	dev_info.force_bind = conf->force_bind;
@@ -286,6 +298,8 @@ rte_kni_alloc(struct rte_mempool *pktmbuf_pool,
 	kni_fifo_init(kni->free_q, KNI_FIFO_COUNT_MAX);
 	dev_info.free_phys = kni->m_free_q->phys_addr;
 
+    ////////////////////////////////////////////////////////////////////////////
+
 	/* Request RING */
 	kni->req_q = kni->m_req_q->addr;
 	kni_fifo_init(kni->req_q, KNI_FIFO_COUNT_MAX);
@@ -296,10 +310,13 @@ rte_kni_alloc(struct rte_mempool *pktmbuf_pool,
 	kni_fifo_init(kni->resp_q, KNI_FIFO_COUNT_MAX);
 	dev_info.resp_phys = kni->m_resp_q->phys_addr;
 
+    // zhou: only one comfig command memory reserved ?
 	/* Req/Resp sync mem area */
 	kni->sync_addr = kni->m_sync_addr->addr;
 	dev_info.sync_va = kni->m_sync_addr->addr;
 	dev_info.sync_phys = kni->m_sync_addr->phys_addr;
+
+    ////////////////////////////////////////////////////////////////////////////
 
 	kni->pktmbuf_pool = pktmbuf_pool;
 	kni->group_id = conf->group_id;
@@ -523,6 +540,10 @@ kni_config_allmulticast(uint16_t port_id, uint8_t to_on)
 	return 0;
 }
 
+// zhou: request sent by KNI vETH, this function is invoked by APP.
+//       "It is used to handle the request mbufs sent from kernel space.
+//       Then analyzes it and calls the specific actions for the specific requests.
+//       Finally constructs the response mbuf and puts it back to the resp_q."
 int
 rte_kni_handle_request(struct rte_kni *kni)
 {
@@ -594,6 +615,7 @@ rte_kni_handle_request(struct rte_kni *kni)
 	return 0;
 }
 
+// zhou: ethDev -> PMD(Fast Path APP) ---tx---> KNI -> Slow Path APP
 unsigned
 rte_kni_tx_burst(struct rte_kni *kni, struct rte_mbuf **mbufs, unsigned int num)
 {
@@ -613,6 +635,7 @@ rte_kni_tx_burst(struct rte_kni *kni, struct rte_mbuf **mbufs, unsigned int num)
 	return ret;
 }
 
+// zhou: Slow Path APP -> KNI ---rx---> PMD(Fast Path APP) -> ethdev
 unsigned
 rte_kni_rx_burst(struct rte_kni *kni, struct rte_mbuf **mbufs, unsigned int num)
 {
@@ -632,12 +655,16 @@ kni_free_mbufs(struct rte_kni *kni)
 	struct rte_mbuf *pkts[MAX_MBUF_BURST_NUM];
 
 	ret = kni_fifo_get(kni->free_q, (void **)pkts, MAX_MBUF_BURST_NUM);
+
 	if (likely(ret > 0)) {
 		for (i = 0; i < ret; i++)
 			rte_pktmbuf_free(pkts[i]);
 	}
 }
 
+// zhou: fill up "alloc_q" when init or just fetch mbuf from "tx_q".
+//       In case of sending packets, mbuf has been handover to PMD, we don't know
+//       when it will be released. So allocate a new mbuf to return "alloc_q".
 static void
 kni_allocate_mbufs(struct rte_kni *kni)
 {
@@ -772,6 +799,7 @@ rte_kni_unregister_handlers(struct rte_kni *kni)
 	return 0;
 }
 
+// zhou: used to simulate vEth link state change.
 int
 rte_kni_update_link(struct rte_kni *kni, unsigned int linkup)
 {
@@ -784,6 +812,7 @@ rte_kni_update_link(struct rte_kni *kni, unsigned int linkup)
 	if (kni == NULL)
 		return -1;
 
+    // zhou: write /sys file directly.
 	snprintf(path, sizeof(path), "/sys/devices/virtual/net/%s/carrier",
 		kni->name);
 

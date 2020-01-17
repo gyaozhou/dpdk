@@ -31,9 +31,13 @@ struct rte_log_dynamic_type;
 /** The rte_log structure. */
 struct rte_logs {
 	uint32_t type;  /**< Bitfield with enabled logs. */
+    // zhou: global log level
 	uint32_t level; /**< Log level. */
 	FILE *file;     /**< Output file set by rte_openlog_stream, or NULL. */
+
+    // zhou: size of "dynamic_types".
 	size_t dynamic_types_len;
+    // zhou: used to specify different loglevel for different logtype.
 	struct rte_log_dynamic_type *dynamic_types;
 };
 

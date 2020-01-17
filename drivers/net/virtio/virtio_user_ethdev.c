@@ -369,6 +369,7 @@ virtio_user_notify_queue(struct virtio_hw *hw, struct virtqueue *vq)
 			    strerror(errno));
 }
 
+// zhou: callback fn table for virtio PCI bus.
 const struct virtio_pci_ops virtio_user_ops = {
 	.read_dev_cfg	= virtio_user_read_dev_config,
 	.write_dev_cfg	= virtio_user_write_dev_config,
@@ -385,6 +386,7 @@ const struct virtio_pci_ops virtio_user_ops = {
 	.notify_queue	= virtio_user_notify_queue,
 };
 
+// zhou: arguments for vdev=virtio_user[n], parsed in virtio_user_pmd_probe()
 static const char *valid_args[] = {
 #define VIRTIO_USER_ARG_QUEUES_NUM     "queues"
 	VIRTIO_USER_ARG_QUEUES_NUM,
@@ -441,6 +443,7 @@ get_integer_arg(const char *key __rte_unused,
 	return 0;
 }
 
+// zhou: README,
 static struct rte_eth_dev *
 virtio_user_eth_dev_alloc(struct rte_vdev_device *vdev)
 {
@@ -467,6 +470,8 @@ virtio_user_eth_dev_alloc(struct rte_vdev_device *vdev)
 
 	hw->port_id = data->port_id;
 	dev->port_id = data->port_id;
+
+    // zhou:
 	virtio_hw_internal[hw->port_id].vtpci_ops = &virtio_user_ops;
 	/*
 	 * MSIX is required to enable LSC (see virtio_init_device).
@@ -490,6 +495,12 @@ virtio_user_eth_dev_free(struct rte_eth_dev *eth_dev)
 	rte_free(hw->virtio_user_dev);
 	rte_eth_dev_release_port(eth_dev);
 }
+
+// zhou: invoked by vdev_probe_all_drivers(), which invoked by rte_bus_probe().
+//       All devices (includes vdev) are scaned in vdev_scan(), here to probe
+//       suitable driver.
+//       "dev" init by rte_eal with the device basic info.
+//       In case of a vdev, the arguments passed from CLI will be the core data.
 
 /* Dev initialization routine. Invoked once for each virtio vdev at
  * EAL init time, see rte_bus_probe().
@@ -533,12 +544,14 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		return 0;
 	}
 
+    // zhou: get CLI parameters provided by client.
 	kvlist = rte_kvargs_parse(rte_vdev_device_args(dev), valid_args);
 	if (!kvlist) {
 		PMD_INIT_LOG(ERR, "error when parsing param");
 		goto end;
 	}
 
+    // zhou: parse "path"
 	if (rte_kvargs_count(kvlist, VIRTIO_USER_ARG_PATH) == 1) {
 		if (rte_kvargs_process(kvlist, VIRTIO_USER_ARG_PATH,
 				       &get_string_arg, &path) < 0) {
@@ -552,6 +565,7 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		goto end;
 	}
 
+    // zhou: "iface"
 	if (rte_kvargs_count(kvlist, VIRTIO_USER_ARG_INTERFACE_NAME) == 1) {
 		if (is_vhost_user_by_type(path)) {
 			PMD_INIT_LOG(ERR,
@@ -568,6 +582,7 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		}
 	}
 
+    // zhou: "mac"
 	if (rte_kvargs_count(kvlist, VIRTIO_USER_ARG_MAC) == 1) {
 		if (rte_kvargs_process(kvlist, VIRTIO_USER_ARG_MAC,
 				       &get_string_arg, &mac_addr) < 0) {
@@ -577,6 +592,7 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		}
 	}
 
+    // zhou: "queue_size"
 	if (rte_kvargs_count(kvlist, VIRTIO_USER_ARG_QUEUE_SIZE) == 1) {
 		if (rte_kvargs_process(kvlist, VIRTIO_USER_ARG_QUEUE_SIZE,
 				       &get_integer_arg, &queue_size) < 0) {
@@ -586,6 +602,7 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		}
 	}
 
+    // zhou: "queues"
 	if (rte_kvargs_count(kvlist, VIRTIO_USER_ARG_QUEUES_NUM) == 1) {
 		if (rte_kvargs_process(kvlist, VIRTIO_USER_ARG_QUEUES_NUM,
 				       &get_integer_arg, &queues) < 0) {
@@ -595,6 +612,7 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		}
 	}
 
+    // zhou: "server'
 	if (rte_kvargs_count(kvlist, VIRTIO_USER_ARG_SERVER_MODE) == 1) {
 		if (rte_kvargs_process(kvlist, VIRTIO_USER_ARG_SERVER_MODE,
 				       &get_integer_arg, &server_mode) < 0) {
@@ -604,6 +622,7 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		}
 	}
 
+    // zhou: "cq"
 	if (rte_kvargs_count(kvlist, VIRTIO_USER_ARG_CQ_NUM) == 1) {
 		if (rte_kvargs_process(kvlist, VIRTIO_USER_ARG_CQ_NUM,
 				       &get_integer_arg, &cq) < 0) {
@@ -636,6 +655,7 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		goto end;
 	}
 
+    // zhou: "mrg_rxbuf"
 	if (rte_kvargs_count(kvlist, VIRTIO_USER_ARG_MRG_RXBUF) == 1) {
 		if (rte_kvargs_process(kvlist, VIRTIO_USER_ARG_MRG_RXBUF,
 				       &get_integer_arg, &mrg_rxbuf) < 0) {
@@ -645,6 +665,7 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		}
 	}
 
+    // zhou: "in_order"
 	if (rte_kvargs_count(kvlist, VIRTIO_USER_ARG_IN_ORDER) == 1) {
 		if (rte_kvargs_process(kvlist, VIRTIO_USER_ARG_IN_ORDER,
 				       &get_integer_arg, &in_order) < 0) {
@@ -654,6 +675,7 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		}
 	}
 
+    // zhou: alloc device "struct rte_eth_dev", with vdev priate data space.
 	eth_dev = virtio_user_eth_dev_alloc(dev);
 	if (!eth_dev) {
 		PMD_INIT_LOG(ERR, "virtio_user fails to alloc device");
@@ -661,6 +683,11 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 	}
 
 	hw = eth_dev->data->dev_private;
+
+    // zhou: set proper parameters for "struct virtio_user_dev" which is
+    //       driver's private space of "struct rte_eth_dev"
+    //       set by primary only.
+    //       Connect to backend driver vhost_user/vhost_kernel.
 	if (virtio_user_dev_init(hw->virtio_user_dev, path, queues, cq,
 			 queue_size, mac_addr, &ifname, server_mode,
 			 mrg_rxbuf, in_order, packed_vq) < 0) {
@@ -668,6 +695,12 @@ virtio_user_pmd_probe(struct rte_vdev_device *dev)
 		virtio_user_eth_dev_free(eth_dev);
 		goto end;
 	}
+
+    // zhou: virtio pmd driver will be invoked.
+    //       Unlike physical dev, called by rte_pci_probe(). This is shortcut,
+    //       init vdev driver, then init corresponding pmd driver directly.
+    //       We can suppose that vdev driver contains the pmd driver.
+    //       And lib/rte_ethdev could handle it directly.
 
 	/* previously called by rte_pci_probe() for physical dev */
 	if (eth_virtio_dev_init(eth_dev) < 0) {
@@ -716,13 +749,22 @@ virtio_user_pmd_remove(struct rte_vdev_device *vdev)
 	return 0;
 }
 
+// zhou: when vdev bus detect new vdev device, probe corresponding driver.
 static struct rte_vdev_driver virtio_user_driver = {
 	.probe = virtio_user_pmd_probe,
 	.remove = virtio_user_pmd_remove,
 };
 
+// zhou: register vdev driver
+//       "net_virtio_user" is used as part of function name,
+//       "virtio_user_driver" is callback fn table.
 RTE_PMD_REGISTER_VDEV(net_virtio_user, virtio_user_driver);
+
+// zhou: here define alais, "net_virtio_user" == "virtio_user", the right one
+//       was used in cmdline, e.g. "--vdev=virtio_user0,path=/var/run/usvhost".
 RTE_PMD_REGISTER_ALIAS(net_virtio_user, virtio_user);
+
+// zhou: parameters supported.
 RTE_PMD_REGISTER_PARAM_STRING(net_virtio_user,
 	"path=<path> "
 	"mac=<mac addr> "

@@ -17,6 +17,7 @@
 #define IPV4_KEYLEN 1
 #define IPV6_KEYLEN 4
 
+// zhou: move mbuf to recycle bin.
 /* helper macros */
 #define	IP_FRAG_MBUF2DR(dr, mb)	((dr)->row[(dr)->cnt++] = (mb))
 
@@ -68,6 +69,7 @@ ip_frag_key_invalidate(struct ip_frag_key * key)
 	key->key_len = 0;
 }
 
+// zhou: 0 means matched.
 /* compare two keys */
 static inline uint64_t
 ip_frag_key_cmp(const struct ip_frag_key * k1, const struct ip_frag_key * k2)
@@ -83,6 +85,8 @@ ip_frag_key_cmp(const struct ip_frag_key * k1, const struct ip_frag_key * k2)
 /*
  * misc fragment functions
  */
+
+// zhou: recycle all fragments already received of this IP packets.
 
 /* put fragment on death row */
 static inline void
@@ -122,6 +126,7 @@ ip_frag_free_immediate(struct ip_frag_pkt *fp)
 	fp->last_idx = 0;
 }
 
+// zhou: the comment is confusing. Once the key is empty, means ...
 /* if key is empty, mark key as in use */
 static inline void
 ip_frag_inuse(struct rte_ip_frag_tbl *tbl, const struct  ip_frag_pkt *fp)
@@ -145,6 +150,8 @@ ip_frag_reset(struct ip_frag_pkt *fp, uint64_t tms)
 	fp->start = tms;
 	fp->total_size = UINT32_MAX;
 	fp->frag_size = 0;
+
+    // zhou: at least two fragments.
 	fp->last_idx = IP_MIN_FRAG_NUM;
 	fp->frags[IP_LAST_FRAG_IDX] = zero_frag;
 	fp->frags[IP_FIRST_FRAG_IDX] = zero_frag;
@@ -156,9 +163,12 @@ ip_frag_tbl_del(struct rte_ip_frag_tbl *tbl, struct rte_ip_frag_death_row *dr,
 	struct ip_frag_pkt *fp)
 {
 	ip_frag_free(fp, dr);
+
 	ip_frag_key_invalidate(&fp->key);
+
 	TAILQ_REMOVE(&tbl->lru, fp, lru);
 	tbl->use_entries--;
+
 	IP_FRAG_TBL_STAT_UPDATE(&tbl->stat, del_num, 1);
 }
 

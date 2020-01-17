@@ -19,6 +19,7 @@
 
 /* global log structure */
 struct rte_logs rte_logs = {
+    // zhou: enable all internal 32 logtype
 	.type = ~0,
 	.level = RTE_LOG_DEBUG,
 	.file = NULL,
@@ -53,6 +54,7 @@ struct log_cur_msg {
 	uint32_t logtype;  /**< log type  - see rte_log.h */
 };
 
+// zhou:
 struct rte_log_dynamic_type {
 	const char *name;
 	uint32_t loglevel;
@@ -247,12 +249,14 @@ rte_log_lookup(const char *name)
 static int
 __rte_log_register(const char *name, int id)
 {
+    // zhou: "name" pointer to const string, why we need copy it?
 	char *dup_name = strdup(name);
 
 	if (dup_name == NULL)
 		return -ENOMEM;
 
 	rte_logs.dynamic_types[id].name = dup_name;
+    // zhou: default log level.
 	rte_logs.dynamic_types[id].loglevel = RTE_LOG_INFO;
 
 	return id;
@@ -272,6 +276,7 @@ rte_log_register(const char *name)
 	new_dynamic_types = realloc(rte_logs.dynamic_types,
 		sizeof(struct rte_log_dynamic_type) *
 		(rte_logs.dynamic_types_len + 1));
+
 	if (new_dynamic_types == NULL)
 		return -ENOMEM;
 	rte_logs.dynamic_types = new_dynamic_types;
@@ -320,6 +325,7 @@ struct logtype {
 	const char *logtype;
 };
 
+// zhou: basic log type, could be extended by "rte_log_register()"
 static const struct logtype logtype_strings[] = {
 	{RTE_LOGTYPE_EAL,        "lib.eal"},
 	{RTE_LOGTYPE_MALLOC,     "lib.malloc"},
@@ -352,6 +358,8 @@ static const struct logtype logtype_strings[] = {
 	{RTE_LOGTYPE_USER8,      "user8"}
 };
 
+// zhou: "rte_log_init()" definition, invoked by libc before main(), in priority
+//       RTE_PRIORITY_LOG==101.
 /* Logging should be first initializer (before drivers and bus) */
 RTE_INIT_PRIO(rte_log_init, LOG)
 {
@@ -359,6 +367,7 @@ RTE_INIT_PRIO(rte_log_init, LOG)
 
 	rte_log_set_global_level(RTE_LOG_DEBUG);
 
+    // zhou: reserve 32 for internal use?
 	rte_logs.dynamic_types = calloc(RTE_LOGTYPE_FIRST_EXT_ID,
 		sizeof(struct rte_log_dynamic_type));
 	if (rte_logs.dynamic_types == NULL)

@@ -48,6 +48,7 @@ static struct rte_devargs *pci_devargs_lookup(struct rte_pci_device *dev)
 	struct rte_pci_addr addr;
 
 	RTE_EAL_DEVARGS_FOREACH("pci", devargs) {
+
 		devargs->bus->parse(devargs->name, &addr);
 		if (!rte_pci_addr_cmp(&dev->addr, &addr))
 			return devargs;
@@ -118,6 +119,7 @@ rte_pci_match(const struct rte_pci_driver *pci_drv,
  * If vendor/device ID match, call the probe() function of the
  * driver.
  */
+// zhou: use registered User Space PCI device driver "dr" to probe device "dev".
 static int
 rte_pci_probe_one_driver(struct rte_pci_driver *dr,
 			 struct rte_pci_device *dev)
@@ -186,9 +188,14 @@ rte_pci_probe_one_driver(struct rte_pci_driver *dr,
 		dev->driver = dr;
 	}
 
+
 	if (!already_probed && (dr->drv_flags & RTE_PCI_DRV_NEED_MAPPING)) {
+        // zhou: comment here are not updated, should be igb_uio/vfio/...
 		/* map resources for devices that use igb_uio */
 		ret = rte_pci_map_device(dev);
+
+        // zhou: failed means that there is no correct kernel module to expose
+        //       PCI memory to User Mode PCI Device Driver.
 		if (ret != 0) {
 			dev->driver = NULL;
 			return ret;
@@ -196,9 +203,12 @@ rte_pci_probe_one_driver(struct rte_pci_driver *dr,
 	}
 
 	/* call the driver probe() function */
+    // zhou: such as eth_ixgbe_pci_probe()
 	ret = dr->probe(dr, dev);
+
 	if (already_probed)
 		return ret; /* no rollback if already succeeded earlier */
+
 	if (ret) {
 		dev->driver = NULL;
 		if ((dr->drv_flags & RTE_PCI_DRV_NEED_MAPPING) &&
@@ -270,7 +280,9 @@ pci_probe_all_drivers(struct rte_pci_device *dev)
 	if (dev == NULL)
 		return -EINVAL;
 
+    // zhou: let all registerd User Space driver to probe PCI device.
 	FOREACH_DRIVER_ON_PCIBUS(dr) {
+        // zhou: such as "struct rte_pci_driver rte_ixgbe_pmd{}"
 		rc = rte_pci_probe_one_driver(dr, dev);
 		if (rc < 0)
 			/* negative value is an error */
@@ -288,6 +300,7 @@ pci_probe_all_drivers(struct rte_pci_device *dev)
  * all registered drivers that have a matching entry in its id_table
  * for discovered devices.
  */
+// zhou: invoked by "rte_bus_probe()"
 int
 rte_pci_probe(void)
 {
@@ -300,22 +313,27 @@ rte_pci_probe(void)
 	if (rte_pci_bus.bus.conf.scan_mode != RTE_BUS_SCAN_WHITELIST)
 		probe_all = 1;
 
+    // zhou: for each detected device, use registered driver one by one to probe.
+    //       By this way, let driver to report match not not.
 	FOREACH_DEVICE_ON_PCIBUS(dev) {
 		probed++;
 
 		devargs = dev->device.devargs;
+
 		/* probe all or only whitelisted devices */
 		if (probe_all)
 			ret = pci_probe_all_drivers(dev);
 		else if (devargs != NULL &&
 			devargs->policy == RTE_DEV_WHITELISTED)
 			ret = pci_probe_all_drivers(dev);
+
 		if (ret < 0) {
 			if (ret != -EEXIST) {
 				RTE_LOG(ERR, EAL, "Requested device "
 					PCI_PRI_FMT " cannot be used\n",
 					dev->addr.domain, dev->addr.bus,
 					dev->addr.devid, dev->addr.function);
+
 				rte_errno = errno;
 				failed++;
 			}
@@ -370,6 +388,7 @@ pci_parse(const char *name, void *addr)
 	return parse == false;
 }
 
+// zhou:
 /* register a driver */
 void
 rte_pci_register(struct rte_pci_driver *driver)
@@ -672,17 +691,21 @@ rte_pci_get_iommu_class(void)
 	return iova_mode;
 }
 
+// zhou:
 struct rte_pci_bus rte_pci_bus = {
 	.bus = {
 		.scan = rte_pci_scan,
 		.probe = rte_pci_probe,
 		.find_device = pci_find_device,
+
 		.plug = pci_plug,
 		.unplug = pci_unplug,
+
 		.parse = pci_parse,
 		.dma_map = pci_dma_map,
 		.dma_unmap = pci_dma_unmap,
 		.get_iommu_class = rte_pci_get_iommu_class,
+
 		.dev_iterate = rte_pci_dev_iterate,
 		.hot_unplug_handler = pci_hot_unplug_handler,
 		.sigbus_handler = pci_sigbus_handler,
@@ -691,4 +714,5 @@ struct rte_pci_bus rte_pci_bus = {
 	.driver_list = TAILQ_HEAD_INITIALIZER(rte_pci_bus.driver_list),
 };
 
+// zhou: "rte_pci_bus.bus" is mandatory for each bus type.
 RTE_REGISTER_BUS(pci, rte_pci_bus.bus);

@@ -131,10 +131,14 @@ struct mbuf_table {
 };
 
 struct rx_queue {
+    // zhou: used to manage received IP Fragment.
 	struct rte_ip_frag_tbl *frag_tbl;
 	struct rte_mempool *pool;
+
+    // zhou: used in routing
 	struct rte_lpm *lpm;
 	struct rte_lpm6 *lpm6;
+
 	uint16_t portid;
 };
 
@@ -304,6 +308,7 @@ send_single_packet(struct rte_mbuf *m, uint16_t port)
 	return 0;
 }
 
+// zhou:
 static inline void
 reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queue,
 	struct lcore_queue_conf *qconf, uint64_t tms)
@@ -340,6 +345,7 @@ reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queue,
 			m->l2_len = sizeof(*eth_hdr);
 			m->l3_len = sizeof(*ip_hdr);
 
+            // zhou:
 			/* process this fragment. */
 			mo = rte_ipv4_frag_reassemble_packet(tbl, dr, m, tms, ip_hdr);
 			if (mo == NULL)
@@ -357,6 +363,8 @@ reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queue,
 			/* update offloading flags */
 			m->ol_flags |= (PKT_TX_IPV4 | PKT_TX_IP_CKSUM);
 		}
+
+        // zhou: routing related
 		ip_dst = rte_be_to_cpu_32(ip_hdr->dst_addr);
 
 		/* Find destination port */
@@ -451,6 +459,8 @@ main_loop(__attribute__((unused)) void *dummy)
 
 	while (1) {
 
+        // zhou: in reassemble procedure, the expect time is important, otherwise
+        //       the local IP Fragement buffer table will be overrided.
 		cur_tsc = rte_rdtsc();
 
 		/*
@@ -850,6 +860,7 @@ setup_port_tbl(struct lcore_queue_conf *qconf, uint32_t lcore, int socket,
 	return 0;
 }
 
+// zhou:
 static int
 setup_queue_tbl(struct rx_queue *rxq, uint32_t lcore, uint32_t queue)
 {
@@ -865,12 +876,15 @@ setup_queue_tbl(struct rx_queue *rxq, uint32_t lcore, uint32_t queue)
 	frag_cycles = (rte_get_tsc_hz() + MS_PER_S - 1) / MS_PER_S *
 		max_flow_ttl;
 
+    // zhou: create IP fragment table.
 	if ((rxq->frag_tbl = rte_ip_frag_table_create(max_flow_num,
 			IP_FRAG_TBL_BUCKET_ENTRIES, max_flow_num, frag_cycles,
 			socket)) == NULL) {
+
 		RTE_LOG(ERR, IP_RSMBL, "ip_frag_tbl_create(%u) on "
 			"lcore: %u for queue: %u failed\n",
 			max_flow_num, lcore, queue);
+
 		return -1;
 	}
 
@@ -879,8 +893,11 @@ setup_queue_tbl(struct rx_queue *rxq, uint32_t lcore, uint32_t queue)
 	 * mbufs could be stored int the fragment table.
 	 * Plus, each TX queue can hold up to <max_flow_num> packets.
 	 */
-
+    // zhou: "max_flow_num" is "max_entries" in rte_ip_frag_table_create().
 	nb_mbuf = RTE_MAX(max_flow_num, 2UL * MAX_PKT_BURST) * MAX_FRAG_NUM;
+    // zhou: MAX_FRAG_NUM == RTE_LIBRTE_IP_FRAG_MAX_FRAG, in case it comes from
+    //       65535/1500, there is no need to consider Jumbo Frame, since Jumbo Frame
+    //       will also split into segments and stored in mbuf.
 	nb_mbuf *= (port_conf.rxmode.max_rx_pkt_len + BUF_SIZE - 1) / BUF_SIZE;
 	nb_mbuf *= 2; /* ipv4 and ipv6 */
 	nb_mbuf += nb_rxd + nb_txd;
@@ -1034,6 +1051,7 @@ main(int argc, char **argv)
 
 	/* initialize all ports */
 	RTE_ETH_FOREACH_DEV(portid) {
+
 		struct rte_eth_rxconf rxq_conf;
 		struct rte_eth_conf local_port_conf = port_conf;
 
@@ -1103,6 +1121,7 @@ main(int argc, char **argv)
 			dev_info.flow_type_rss_offloads;
 		if (local_port_conf.rx_adv_conf.rss_conf.rss_hf !=
 				port_conf.rx_adv_conf.rss_conf.rss_hf) {
+
 			printf("Port %u modified RSS hash function based on hardware support,"
 				"requested:%#"PRIx64" configured:%#"PRIx64"\n",
 				portid,
@@ -1173,6 +1192,8 @@ main(int argc, char **argv)
 
 	printf("\n");
 
+////////////////////////////////////////////////////////////////////////////////
+
 	/* start ports */
 	RTE_ETH_FOREACH_DEV(portid) {
 		if ((enabled_port_mask & (1 << portid)) == 0) {
@@ -1200,8 +1221,11 @@ main(int argc, char **argv)
 	signal(SIGTERM, signal_handler);
 	signal(SIGINT, signal_handler);
 
+////////////////////////////////////////////////////////////////////////////////
+
 	/* launch per-lcore init on every lcore */
 	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MASTER);
+
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
 		if (rte_eal_wait_lcore(lcore_id) < 0)
 			return -1;

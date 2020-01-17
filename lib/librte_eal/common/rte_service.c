@@ -60,14 +60,18 @@ struct core_state {
 	/* map of services IDs are run on this core */
 	uint64_t service_mask;
 	uint8_t runstate; /* running or stopped */
+    // zhou: 0 or 1
 	uint8_t is_service_core; /* set if core is currently a service core */
 	uint8_t service_active_on_lcore[RTE_SERVICE_NUM_MAX];
 	uint64_t loops;
 	uint64_t calls_per_service[RTE_SERVICE_NUM_MAX];
 } __rte_cache_aligned;
 
+// zhou: Service task number >= Service Core number
 static uint32_t rte_service_count;
 static struct rte_service_spec_impl *rte_services;
+
+// zhou: Service Core internal value array
 static struct core_state *lcore_states;
 static uint32_t rte_service_library_initialized;
 
@@ -81,6 +85,7 @@ rte_service_init(void)
 		return -EALREADY;
 	}
 
+    // zhou: support up to 64
 	rte_services = rte_calloc("rte_services", RTE_SERVICE_NUM_MAX,
 			sizeof(struct rte_service_spec_impl),
 			RTE_CACHE_LINE_SIZE);
@@ -96,6 +101,8 @@ rte_service_init(void)
 		goto fail_mem;
 	}
 
+
+
 	int i;
 	int count = 0;
 	struct rte_config *cfg = rte_eal_get_configuration();
@@ -110,6 +117,7 @@ rte_service_init(void)
 
 	rte_service_library_initialized = 1;
 	return 0;
+
 fail_mem:
 	rte_free(rte_services);
 	rte_free(lcore_states);
@@ -233,6 +241,7 @@ rte_service_probe_capability(uint32_t id, uint32_t capability)
 	return !!(s->spec.capabilities & capability);
 }
 
+// zhou: register Service task to run
 int32_t
 rte_service_component_register(const struct rte_service_spec *spec,
 			       uint32_t *id_ptr)
@@ -332,6 +341,7 @@ rte_service_runstate_get(uint32_t id)
 		(check_disabled | lcore_mapped);
 }
 
+// zhou: invoke callback function.
 static inline void
 rte_service_runner_do_callback(struct rte_service_spec_impl *s,
 			       struct core_state *cs, uint32_t service_idx)
@@ -339,8 +349,11 @@ rte_service_runner_do_callback(struct rte_service_spec_impl *s,
 	void *userdata = s->spec.callback_userdata;
 
 	if (service_stats_enabled(s)) {
+
 		uint64_t start = rte_rdtsc();
+        // zhou: Service task
 		s->spec.callback(userdata);
+
 		uint64_t end = rte_rdtsc();
 		s->cycles_spent += end - start;
 		cs->calls_per_service[service_idx]++;
@@ -372,10 +385,12 @@ service_run(uint32_t i, struct core_state *cs, uint64_t service_mask,
 	 */
 	const int use_atomics = (service_mt_safe(s) == 0) &&
 				(rte_atomic32_read(&s->num_mapped_cores) > 1);
+
 	if (use_atomics) {
 		if (!rte_atomic32_cmpset((uint32_t *)&s->execute_lock, 0, 1))
 			return -EBUSY;
 
+        // zhou:
 		rte_service_runner_do_callback(s, cs, i);
 		rte_atomic32_clear(&s->execute_lock);
 	} else
@@ -432,6 +447,7 @@ rte_service_run_iter_on_app_lcore(uint32_t id, uint32_t serialize_mt_unsafe)
 	return ret;
 }
 
+// zhou: main loop of service core running.
 static int32_t
 rte_service_runner_func(void *arg)
 {
@@ -460,6 +476,7 @@ rte_service_runner_func(void *arg)
 	return 0;
 }
 
+// zhou: get number of Service Core.
 int32_t
 rte_service_lcore_count(void)
 {
@@ -470,10 +487,13 @@ rte_service_lcore_count(void)
 	return count;
 }
 
+// zhou: fill "array[]", the list of Service Core id.
 int32_t
 rte_service_lcore_list(uint32_t array[], uint32_t n)
 {
 	uint32_t count = rte_service_lcore_count();
+
+    // zhou: out of memory of "array[]" supplied.
 	if (count > n)
 		return -ENOMEM;
 
@@ -506,6 +526,7 @@ rte_service_lcore_count_services(uint32_t lcore)
 	return __builtin_popcountll(cs->service_mask);
 }
 
+// zhou: start with CLI argument assigned.
 int32_t
 rte_service_start_with_defaults(void)
 {
@@ -514,12 +535,15 @@ rte_service_start_with_defaults(void)
 	 */
 	uint32_t i;
 	int ret;
+    // zhou: get Service task number
 	uint32_t count = rte_service_get_count();
 
 	int32_t lcore_iter = 0;
 	uint32_t ids[RTE_MAX_LCORE] = {0};
+    // zhou: get Service lcore number
 	int32_t lcore_count = rte_service_lcore_list(ids, RTE_MAX_LCORE);
 
+    // zhou: the number of lcore assigned for Service Core is NOT supplied.
 	if (lcore_count == 0)
 		return -ENOTSUP;
 
@@ -536,6 +560,7 @@ rte_service_start_with_defaults(void)
 		if (ret)
 			return -ENODEV;
 
+        // zhou: round robin way to assign Service task to Service Core.
 		lcore_iter++;
 		if (lcore_iter >= lcore_count)
 			lcore_iter = 0;
@@ -555,6 +580,7 @@ service_update(struct rte_service_spec *service, uint32_t lcore,
 	uint32_t i;
 	int32_t sid = -1;
 
+    // zhou:
 	for (i = 0; i < RTE_SERVICE_NUM_MAX; i++) {
 		if ((struct rte_service_spec *)&rte_services[i] == service &&
 				service_valid(i)) {
@@ -569,21 +595,28 @@ service_update(struct rte_service_spec *service, uint32_t lcore,
 	if (!lcore_states[lcore].is_service_core)
 		return -EINVAL;
 
+    // zhou: used in let each Service lcore know bitmap of Service task.
+    //       1 Service lcore : N Service task
 	uint64_t sid_mask = UINT64_C(1) << sid;
+
 	if (set) {
 		uint64_t lcore_mapped = lcore_states[lcore].service_mask &
 			sid_mask;
 
+        // zhou: add task on Service lcore
 		if (*set && !lcore_mapped) {
 			lcore_states[lcore].service_mask |= sid_mask;
 			rte_atomic32_inc(&rte_services[sid].num_mapped_cores);
 		}
+
+        // zhou: remove task on Service lcore
 		if (!*set && lcore_mapped) {
 			lcore_states[lcore].service_mask &= ~(sid_mask);
 			rte_atomic32_dec(&rte_services[sid].num_mapped_cores);
 		}
 	}
 
+    // zhou: result?
 	if (enabled)
 		*enabled = !!(lcore_states[lcore].service_mask & (sid_mask));
 
@@ -596,8 +629,13 @@ int32_t
 rte_service_map_lcore_set(uint32_t id, uint32_t lcore, uint32_t enabled)
 {
 	struct rte_service_spec_impl *s;
+
+    // zhou: will check and return service task in "s".
 	SERVICE_VALID_GET_OR_ERR_RET(id, s, -EINVAL);
+
 	uint32_t on = enabled > 0;
+
+    // zhou: update "service_mask" of lcore
 	return service_update(&s->spec, lcore, &on, 0);
 }
 
@@ -647,6 +685,7 @@ rte_service_lcore_reset_all(void)
 	return 0;
 }
 
+// zhou: dynamically make a lcore as Service Core without CLI arguments
 int32_t
 rte_service_lcore_add(uint32_t lcore)
 {
@@ -663,9 +702,11 @@ rte_service_lcore_add(uint32_t lcore)
 
 	rte_smp_wmb();
 
+    // zhou: why still need wait? already done in rte_eal_mp_wait_lcore().
 	return rte_eal_wait_lcore(lcore);
 }
 
+// zhou: Removes lcore from the list of service cores.
 int32_t
 rte_service_lcore_del(uint32_t lcore)
 {
@@ -685,6 +726,7 @@ rte_service_lcore_del(uint32_t lcore)
 	return 0;
 }
 
+// zhou: used in dynamically make a lcore as Service Core and start it.
 int32_t
 rte_service_lcore_start(uint32_t lcore)
 {
@@ -703,7 +745,10 @@ rte_service_lcore_start(uint32_t lcore)
 	 */
 	lcore_states[lcore].runstate = RUNSTATE_RUNNING;
 
+    // zhou: running task on Service Core (part of lcore).
+    //       In fact, just send a message to slave lcore.
 	int ret = rte_eal_remote_launch(rte_service_runner_func, 0, lcore);
+
 	/* returns -EBUSY if the core is already launched, 0 on success */
 	return ret;
 }

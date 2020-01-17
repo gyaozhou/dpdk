@@ -348,6 +348,7 @@ exit:
 	pthread_mutex_unlock(&dev->mutex);
 }
 
+// zhou: README,
 static int
 virtio_user_dev_setup(struct virtio_user_dev *dev)
 {
@@ -419,6 +420,7 @@ virtio_user_dev_setup(struct virtio_user_dev *dev)
 	 1ULL << VIRTIO_F_VERSION_1		|	\
 	 1ULL << VIRTIO_F_RING_PACKED)
 
+// zhou: README,
 int
 virtio_user_dev_init(struct virtio_user_dev *dev, char *path, int queues,
 		     int cq, int queue_size, const char *mac, char **ifname,

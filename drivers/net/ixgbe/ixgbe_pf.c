@@ -195,6 +195,8 @@ ixgbe_add_tx_flow_control_drop_filter(struct rte_eth_dev *eth_dev)
 		hw->mac.ops.set_ethertype_anti_spoofing(hw, true, i);
 }
 
+// zhou: could be used to replace ixgbe driver in case of SR-IOV enabled on host.
+//       And ixgbevf driver will be used on VM for VF.
 int ixgbe_pf_host_configure(struct rte_eth_dev *eth_dev)
 {
 	uint32_t vtctl, fcrth;
@@ -867,6 +869,7 @@ ixgbe_rcv_ack_from_vf(struct rte_eth_dev *dev, uint16_t vf)
 		ixgbe_write_mbx(hw, &msg, 1, vf);
 }
 
+// zhou:
 void ixgbe_pf_mbx_process(struct rte_eth_dev *eth_dev)
 {
 	uint16_t vf;

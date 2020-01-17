@@ -30,6 +30,8 @@ extern "C" {
 	(RTE_ETHER_ADDR_LEN * 2 + \
 		RTE_ETHER_TYPE_LEN) /**< Length of Ethernet header. */
 #define RTE_ETHER_MIN_LEN   64    /**< Minimum frame len, including CRC. */
+
+// zhou: normal MTU 1500(IP packet)+18(Ethernet overhead)
 #define RTE_ETHER_MAX_LEN   1518  /**< Maximum frame len, including CRC. */
 #define RTE_ETHER_MTU       \
 	(RTE_ETHER_MAX_LEN - RTE_ETHER_HDR_LEN - \
@@ -272,6 +274,7 @@ rte_ether_unformat_addr(const char *str, struct rte_ether_addr *eth_addr);
 struct rte_ether_hdr {
 	struct rte_ether_addr d_addr; /**< Destination address. */
 	struct rte_ether_addr s_addr; /**< Source address. */
+    // zhou: payload type, e.g. IPv4, ARP, VLAN, ...
 	uint16_t ether_type;      /**< Frame type. */
 } __attribute__((aligned(2)));
 
@@ -280,8 +283,10 @@ struct rte_ether_hdr {
  * Contains the 16-bit VLAN Tag Control Identifier and the Ethernet type
  * of the encapsulated frame.
  */
+// zhou:
 struct rte_vlan_hdr {
 	uint16_t vlan_tci; /**< Priority (3) + CFI (1) + Identifier Code (12) */
+    // zhou: payload type, e.g. IPv4, ARP, ...
 	uint16_t eth_proto;/**< Ethernet type of encapsulated frame. */
 } __attribute__((__packed__));
 

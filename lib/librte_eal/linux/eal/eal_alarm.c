@@ -60,6 +60,7 @@ int
 rte_eal_alarm_init(void)
 {
 	intr_handle.type = RTE_INTR_HANDLE_ALARM;
+
 	/* create a timerfd file descriptor */
 	intr_handle.fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
 	if (intr_handle.fd == -1)

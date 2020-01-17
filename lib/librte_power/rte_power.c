@@ -43,6 +43,7 @@ reset_power_function_ptrs(void)
 	rte_power_get_capabilities = NULL;
 }
 
+// zhou: power management is quite different between baremetal and VM.
 int
 rte_power_set_env(enum power_management_env env)
 {

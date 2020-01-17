@@ -68,6 +68,7 @@ rte_port_kni_reader_rx(void *port, struct rte_mbuf **pkts, uint32_t n_pkts)
 	uint16_t rx_pkt_cnt;
 
 	rx_pkt_cnt = rte_kni_rx_burst(p->kni, pkts, n_pkts);
+
 	RTE_PORT_KNI_READER_STATS_PKTS_IN_ADD(p, rx_pkt_cnt);
 	return rx_pkt_cnt;
 }

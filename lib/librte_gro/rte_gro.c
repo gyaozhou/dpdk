@@ -113,6 +113,7 @@ rte_gro_ctx_destroy(void *ctx)
 	rte_free(gro_ctx);
 }
 
+// zhou: README,
 uint16_t
 rte_gro_reassemble_burst(struct rte_mbuf **pkts,
 		uint16_t nb_pkts,
@@ -217,6 +218,7 @@ rte_gro_reassemble_burst(struct rte_mbuf **pkts,
 	return nb_after_gro;
 }
 
+// zhou: README,
 uint16_t
 rte_gro_reassemble(struct rte_mbuf **pkts,
 		uint16_t nb_pkts,
@@ -265,6 +267,7 @@ rte_gro_reassemble(struct rte_mbuf **pkts,
 	return unprocess_num;
 }
 
+// zhou: README,
 uint16_t
 rte_gro_timeout_flush(void *ctx,
 		uint64_t timeout_cycles,

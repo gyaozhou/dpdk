@@ -79,6 +79,7 @@ static unsigned get_gcd(unsigned a, unsigned b)
  * padding between objects. This function return the new size of the
  * object.
  */
+// zhou: README, not only keep align with cache, but also rank&channel.
 static unsigned optimize_object_size(unsigned obj_size)
 {
 	unsigned nrank, nchan;
@@ -162,6 +163,8 @@ mempool_add_elem(struct rte_mempool *mp, __rte_unused void *opaque,
 #endif
 }
 
+// zhou: loop for each objects, such for init.
+
 /* call obj_cb() for each mempool element */
 uint32_t
 rte_mempool_obj_iter(struct rte_mempool *mp,
@@ -195,6 +198,11 @@ rte_mempool_mem_iter(struct rte_mempool *mp,
 
 	return n;
 }
+
+// zhou: on top of element size provided by user, we also caculate the size of
+//       extra header and trailer for each object.
+//       At the same time, padding for keep alignment with memory channel and
+//       rank, cache for high performance.
 
 /* get the header, trailer and total size of a mempool element. */
 uint32_t
@@ -756,6 +764,9 @@ rte_mempool_cache_free(struct rte_mempool_cache *cache)
 	rte_free(cache);
 }
 
+// zhou: just setup objects management framework without populating any objects.
+//       "cache_size", means number of object for each cache.
+//       "private_data_size", appended after the mempool structure.
 /* create an empty mempool */
 struct rte_mempool *
 rte_mempool_create_empty(const char *name, unsigned n, unsigned elt_size,
@@ -837,6 +848,7 @@ rte_mempool_create_empty(const char *name, unsigned n, unsigned elt_size,
 		goto exit_unlock;
 	}
 
+    // zhou: allocate "struct rte_mempool"
 	mz = rte_memzone_reserve(mz_name, mempool_size, socket_id, mz_flags);
 	if (mz == NULL)
 		goto exit_unlock;
@@ -849,6 +861,7 @@ rte_mempool_create_empty(const char *name, unsigned n, unsigned elt_size,
 		rte_errno = ENAMETOOLONG;
 		goto exit_unlock;
 	}
+
 	mp->mz = mz;
 	mp->size = n;
 	mp->flags = flags;
@@ -859,6 +872,7 @@ rte_mempool_create_empty(const char *name, unsigned n, unsigned elt_size,
 	/* Size of default caches, zero means disabled. */
 	mp->cache_size = cache_size;
 	mp->private_data_size = private_data_size;
+
 	STAILQ_INIT(&mp->elt_list);
 	STAILQ_INIT(&mp->mem_list);
 
@@ -879,6 +893,7 @@ rte_mempool_create_empty(const char *name, unsigned n, unsigned elt_size,
 	te->data = mp;
 
 	rte_mcfg_tailq_write_lock();
+    // zhou: add to mempool list.
 	TAILQ_INSERT_TAIL(mempool_list, te, next);
 	rte_mcfg_tailq_write_unlock();
 	rte_mcfg_mempool_write_unlock();
@@ -891,6 +906,13 @@ exit_unlock:
 	rte_mempool_free(mp);
 	return NULL;
 }
+
+// zhou: with this function to create mempool, using rte_ring to manage objects.
+//       In order to allow customer to specify what they want,
+//       rte_mempool_create_empty() + rte_mbuf_best_mempool_ops()
+//       + rte_mempool_set_ops_byname() + rte_mempool_populate_default(), used more.
+//       By this way, customer can change it as they like: cli
+//       "OPT_MBUF_POOL_OPS_NAME".
 
 /* create the mempool */
 struct rte_mempool *
@@ -908,6 +930,7 @@ rte_mempool_create(const char *name, unsigned n, unsigned elt_size,
 	if (mp == NULL)
 		return NULL;
 
+    // zhou: up to flags, customer could use the most efficient way.
 	/*
 	 * Since we have 4 combinations of the SP/SC/MP/MC examine the flags to
 	 * set the correct index into the table of ops structs.
@@ -924,6 +947,7 @@ rte_mempool_create(const char *name, unsigned n, unsigned elt_size,
 	if (ret)
 		goto fail;
 
+    // zhou: mempool private data init.
 	/* call the mempool priv initializer */
 	if (mp_init)
 		mp_init(mp, mp_init_arg);
@@ -931,6 +955,7 @@ rte_mempool_create(const char *name, unsigned n, unsigned elt_size,
 	if (rte_mempool_populate_default(mp) < 0)
 		goto fail;
 
+    // zhou: init each object
 	/* call the object initializers */
 	if (obj_init)
 		rte_mempool_obj_iter(mp, obj_init, obj_init_arg);
@@ -1258,6 +1283,7 @@ rte_mempool_list_dump(FILE *f)
 	rte_mcfg_mempool_read_unlock();
 }
 
+// zhou: no need to preserve a reference to a mempool everywhere in your code.
 /* search a mempool from its name */
 struct rte_mempool *
 rte_mempool_lookup(const char *name)

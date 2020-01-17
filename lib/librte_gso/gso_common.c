@@ -38,6 +38,7 @@ free_gso_segment(struct rte_mbuf **pkts, uint16_t nb_pkts)
 		rte_pktmbuf_free(pkts[i]);
 }
 
+// zhou: README, similar to rte_ipv4_fragment_packet()
 int
 gso_do_segment(struct rte_mbuf *pkt,
 		uint16_t pkt_hdr_offset,

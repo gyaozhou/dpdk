@@ -11,6 +11,7 @@ import subprocess
 from os.path import exists, abspath, dirname, basename
 
 # The PCI base class for all devices
+# zhou: PCI Class code
 network_class = {'Class': '02', 'Vendor': None, 'Device': None,
                     'SVendor': None, 'SDevice': None}
 acceleration_class = {'Class': '12', 'Vendor': None, 'Device': None,
@@ -59,6 +60,8 @@ misc_devices = [intel_ioat_bdw, intel_ioat_skx, intel_ntb_skx, octeontx2_dma]
 # global dict ethernet devices present. Dictionary indexed by PCI address.
 # Each device within this is itself a dictionary of device properties
 devices = {}
+
+# zhou: dpdk only can handle device drived by these drivers.
 # list of supported DPDK drivers
 dpdk_drivers = ["igb_uio", "vfio-pci", "uio_pci_generic"]
 # list of currently loaded kernel modules
@@ -182,6 +185,7 @@ def check_modules():
     # list of supported modules
     mods = [{"Name": driver, "Found": False} for driver in dpdk_drivers]
 
+    # zhou: same as check "lsmod" output.
     # first check if module is loaded
     for mod in mods:
         if module_is_loaded(mod["Name"]):
@@ -199,7 +203,7 @@ def has_driver(dev_id):
     '''return true if a device is assigned to a driver. False otherwise'''
     return "Driver_str" in devices[dev_id]
 
-
+# zhou: get ethernet device name in Linux.
 def get_pci_device_details(dev_id, probe_lspci):
     '''This function gets additional details for a PCI device'''
     device = {}
@@ -232,6 +236,7 @@ def clear_data():
     global devices
     devices = {}
 
+# zhou: transform output of "lspci -Dvmmnnk", key: pci address, value: attributes
 def get_device_details(devices_type):
     '''This function populates the "devices" dictionary. The keys used are
     the pci addresses (domain:bus:slot.func). The values are themselves
@@ -249,8 +254,10 @@ def get_device_details(devices_type):
                 # Replace "Driver" with "Driver_str" to have consistency of
                 # of dictionary key names
                 if "Driver" in dev.keys():
+                    # zhou: current binding driver
                     dev["Driver_str"] = dev.pop("Driver")
                 if "Module" in dev.keys():
+                    # zhou: default driver
                     dev["Module_str"] = dev.pop("Module")
                 # use dict to make copy of dev
                 devices[dev["Slot"]] = dict(dev)
@@ -266,6 +273,7 @@ def get_device_details(devices_type):
             dev[name.rstrip(":")] = value_list[len(value_list) - 1] \
                 .rstrip("]").lstrip("[")
 
+    # zhou: avoid lost connection to this machine.            
     if devices_type == network_devices:
         # check what is the interface if any for an ssh connection if
         # any to this host, so we can mark it later.
@@ -279,6 +287,7 @@ def get_device_details(devices_type):
             if rt_info[i] == "dev":
                 ssh_if.append(rt_info[i+1])
 
+                
     # based on the basic info, get extended text details
     for d in devices.keys():
         if not device_type_match(devices[d], devices_type):
@@ -289,6 +298,8 @@ def get_device_details(devices_type):
         # No need to probe lspci
         devices[d].update(get_pci_device_details(d, False).items())
 
+        # zhou: according to PCI class, we filter out network device.
+        #       Once there is route over the ethdev, suppose it's active.
         if devices_type == network_devices:
             for _if in ssh_if:
                 if _if in devices[d]["Interface"].split(","):
@@ -729,8 +740,11 @@ def main():
         if ret != 0:
             sys.exit("'lspci' not found - please install 'pciutils'")
     parse_args()
+    # zhou: check dpdk required kernel module state.
     check_modules()
+    
     clear_data()
+    
     get_device_details(network_devices)
     get_device_details(baseband_devices)
     get_device_details(crypto_devices)

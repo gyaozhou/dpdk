@@ -27,6 +27,12 @@
 #define E1000_STAT_DEV_RST_SET	0x00100000
 #define E1000_CTRL_DEV_RST	0x20000000
 
+/********************************************************************************
+ *
+ *                         General ???
+ *
+ ********************************************************************************/
+
 #ifdef E1000_BIT_FIELDS
 struct e1000_adv_data_desc {
 	__le64 buffer_addr;    /* Address of the descriptor's data buffer */
@@ -160,12 +166,23 @@ struct e1000_adv_context_desc {
 #define E1000_IMIREXT_CTRL_FIN	0x00040000  /* Check FIN bit in header */
 #define E1000_IMIREXT_CTRL_BP	0x00080000  /* Bypass check of ctrl bits */
 
+/********************************************************************************
+ *
+ *                         RX Descriptor
+ *
+ ********************************************************************************/
+// zhou:
+
 /* Receive Descriptor - Advanced */
 union e1000_adv_rx_desc {
+
+    // zhou: the format that hardware will read from host memeory, driver write
 	struct {
 		__le64 pkt_addr; /* Packet buffer address */
 		__le64 hdr_addr; /* Header buffer address */
 	} read;
+
+    // zhou: the format that hardware will write to host memeory, driver read
 	struct {
 		struct {
 			union {
@@ -248,6 +265,13 @@ union e1000_adv_rx_desc {
 #define E1000_RXDADV_IPSEC_ERROR_INVALID_LENGTH		0x10000000
 #define E1000_RXDADV_IPSEC_ERROR_AUTHENTICATION_FAILED	0x18000000
 
+/********************************************************************************
+ *
+ *                         TX Descriptor
+ *
+ ********************************************************************************/
+// zhou:
+
 /* Transmit Descriptor - Advanced */
 union e1000_adv_tx_desc {
 	struct {
@@ -284,6 +308,7 @@ union e1000_adv_tx_desc {
 #define E1000_ADVTXD_POPTS_IPSEC	0x00000400 /* IPSec offload request */
 #define E1000_ADVTXD_PAYLEN_SHIFT	14 /* Adv desc PAYLEN shift */
 
+// zhou: Advanced Transmit Context Descriptor
 /* Context descriptors */
 struct e1000_adv_tx_context_desc {
 	__le32 vlan_macip_lens;

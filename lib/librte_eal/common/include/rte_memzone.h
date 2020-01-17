@@ -46,6 +46,7 @@ extern "C" {
  * A structure describing a memzone, which is a contiguous portion of
  * physical memory identified by a name.
  */
+// zhou: mapping between physical address and virtual address.
 struct rte_memzone {
 
 #define RTE_MEMZONE_NAMESIZE 32       /**< Maximum length of memory zone name.*/
@@ -56,9 +57,11 @@ struct rte_memzone {
 		phys_addr_t phys_addr;        /**< deprecated - Start physical address. */
 		rte_iova_t iova;              /**< Start IO address. */
 	};
+
 	RTE_STD_C11
 	union {
 		void *addr;                   /**< Start virtual address. */
+        // zhou: good method to keep alignment
 		uint64_t addr_64;             /**< Makes sure addr is always 64-bits */
 	};
 	size_t len;                       /**< Length of the memzone. */

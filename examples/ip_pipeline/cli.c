@@ -1496,6 +1496,7 @@ static const char cmd_pipeline_help[] =
 "   offset_port_id <offset_port_id>\n"
 "   cpu <cpu_id>\n";
 
+// zhou: handle CLI: "pipeline"
 static void
 cmd_pipeline(char **tokens,
 	uint32_t n_tokens,
@@ -1543,6 +1544,7 @@ cmd_pipeline(char **tokens,
 		return;
 	}
 
+    // zhou:
 	pipeline = pipeline_create(name, &p);
 	if (pipeline == NULL) {
 		snprintf(out, out_size, MSG_CMD_FAIL, tokens[0]);
@@ -6376,6 +6378,7 @@ cmd_help(char **tokens, uint32_t n_tokens, char *out, size_t out_size)
 	snprintf(out, out_size, "Invalid command\n");
 }
 
+// zhou: parse CLI commands.
 void
 cli_process(char *in, char *out, size_t out_size)
 {

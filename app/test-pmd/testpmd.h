@@ -107,6 +107,7 @@ extern const struct rss_type_info rss_type_table[];
  * The data structure associated with a forwarding stream between a receive
  * port/queue and a transmit port/queue.
  */
+// zhou: stream != flow
 struct fwd_stream {
 	/* "read-only" data */
 	portid_t   rx_port;   /**< port to poll for received packets */
@@ -126,9 +127,11 @@ struct fwd_stream {
 	uint64_t rx_bad_outer_l4_csum;
 	/**< received packets has bad outer l4 checksum */
 	unsigned int gro_times;	/**< GRO operation times */
+
 #ifdef RTE_TEST_PMD_RECORD_CORE_CYCLES
 	uint64_t     core_cycles; /**< used for RX and TX processing */
 #endif
+
 #ifdef RTE_TEST_PMD_RECORD_BURST_STATS
 	struct pkt_burst_stats rx_burst_stats;
 	struct pkt_burst_stats tx_burst_stats;
@@ -158,6 +161,7 @@ struct softnic_port {
 /**
  * The data structure associated with each port.
  */
+// zhou:
 struct rte_port {
 	struct rte_eth_dev_info dev_info;   /**< PCI info + driver name */
 	struct rte_eth_conf     dev_conf;   /**< Port configuration. */
@@ -165,13 +169,17 @@ struct rte_port {
 	struct rte_eth_stats    stats;      /**< Last port statistics */
 	unsigned int            socket_id;  /**< For NUMA support */
 	uint16_t		parse_tunnel:1; /**< Parse internal headers */
+
 	uint16_t                tso_segsz;  /**< Segmentation offload MSS for non-tunneled packets. */
 	uint16_t                tunnel_tso_segsz; /**< Segmentation offload MSS for tunneled pkts. */
+
 	uint16_t                tx_vlan_id;/**< The tag ID */
 	uint16_t                tx_vlan_id_outer;/**< The outer tag ID */
 	uint8_t                 tx_queue_stats_mapping_enabled;
 	uint8_t                 rx_queue_stats_mapping_enabled;
+
 	volatile uint16_t        port_status;    /**< port started or not */
+
 	uint8_t                 need_setup;     /**< port just attached */
 	uint8_t                 need_reconfig;  /**< need reconfiguring port or not */
 	uint8_t                 need_reconfig_queues; /**< need reconfiguring queues or not */
@@ -202,12 +210,15 @@ struct rte_port {
  * The system CPU identifier of all logical cores are setup in a global
  * CPU id. configuration table.
  */
+// zhou: README,
 struct fwd_lcore {
 	struct rte_gso_ctx gso_ctx;     /**< GSO context */
 	struct rte_mempool *mbp; /**< The mbuf pool to use by this core */
 	void *gro_ctx;		/**< GRO context */
+
 	streamid_t stream_idx;   /**< index of 1st stream in "fwd_streams" */
 	streamid_t stream_nb;    /**< number of streams in "fwd_streams" */
+
 	lcoreid_t  cpuid_idx;    /**< index of logical core in CPU id table */
 	queueid_t  tx_queue;     /**< TX queue to send forwarded packets */
 	volatile char stopped;   /**< stop forwarding when set */
@@ -234,6 +245,7 @@ typedef void (*packet_fwd_t)(struct fwd_stream *fs);
 
 struct fwd_engine {
 	const char       *fwd_mode_name; /**< Forwarding mode name. */
+
 	port_fwd_begin_t port_fwd_begin; /**< NULL if nothing special to do. */
 	port_fwd_end_t   port_fwd_end;   /**< NULL if nothing special to do. */
 	packet_fwd_t     packet_fwd;     /**< Mandatory. */
@@ -274,6 +286,7 @@ extern uint16_t mempool_flags;
  */
 struct fwd_config {
 	struct fwd_engine *fwd_eng; /**< Packet forwarding mode. */
+
 	streamid_t nb_fwd_streams;  /**< Nb. of forward streams to process. */
 	lcoreid_t  nb_fwd_lcores;   /**< Nb. of logical cores to launch. */
 	portid_t   nb_fwd_ports;    /**< Nb. of ports involved. */

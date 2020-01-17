@@ -1224,6 +1224,7 @@ virtio_rx_offload(struct rte_mbuf *m, struct virtio_net_hdr *hdr)
 
 #define VIRTIO_MBUF_BURST_SZ 64
 #define DESC_PER_CACHELINE (RTE_CACHE_LINE_SIZE / sizeof(struct vring_desc))
+// zhou: README,
 uint16_t
 virtio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 {
@@ -1802,6 +1803,7 @@ virtio_recv_mergeable_pkts(void *rx_queue,
 	return nb_rx;
 }
 
+// zhou: README,
 uint16_t
 virtio_recv_mergeable_pkts_packed(void *rx_queue,
 			struct rte_mbuf **rx_pkts,

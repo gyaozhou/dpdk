@@ -61,6 +61,7 @@ store_max_vfs(struct device *dev, struct device_attribute *attr,
 	return err ? err : count;
 }
 
+// zhou: concat "dev_attr_" with "max_vfs"/"extended_tag"/"max_read_request_size"
 static DEVICE_ATTR(max_vfs, S_IRUGO | S_IWUSR, show_max_vfs, store_max_vfs);
 
 static struct attribute *dev_attrs[] = {
@@ -68,6 +69,7 @@ static struct attribute *dev_attrs[] = {
 	NULL,
 };
 
+// zhou: all of these used by sysfs
 static const struct attribute_group dev_attr_grp = {
 	.attrs = dev_attrs,
 };
@@ -366,13 +368,17 @@ igbuio_pci_setup_iomem(struct pci_dev *dev, struct uio_info *info,
 	len = pci_resource_len(dev, pci_bar);
 	if (addr == 0 || len == 0)
 		return -1;
+
 	if (wc_activate == 0) {
+        // zhou: make the address could be visited
+        //       Refer to "arch/x86/mm/ioremap.c ioremap_nocache()"
 		internal_addr = ioremap(addr, len);
 		if (internal_addr == NULL)
 			return -1;
 	} else {
 		internal_addr = NULL;
 	}
+
 	info->mem[n].name = name;
 	info->mem[n].addr = addr;
 	info->mem[n].internal_addr = internal_addr;
@@ -461,6 +467,8 @@ static int __devinit
 #else
 static int
 #endif
+// zhou: step 2, finish PCI device related tasks, begin uio/ethernet/... related tasks.
+//       Before this function was invoked, "struct pci_dev" was filled by kernal.
 igbuio_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
 	struct rte_uio_pci_dev *udev;
@@ -612,6 +620,7 @@ static struct pci_driver igbuio_pci_driver = {
 	.remove = igbuio_pci_remove,
 };
 
+// zhou: entry for this module
 static int __init
 igbuio_pci_init_module(void)
 {
@@ -629,6 +638,7 @@ igbuio_pci_init_module(void)
 	if (ret < 0)
 		return ret;
 
+    // zhou: step 1, register PCI callback, to "probe" whether hardware matching driver.
 	return pci_register_driver(&igbuio_pci_driver);
 }
 
@@ -637,6 +647,10 @@ igbuio_pci_exit_module(void)
 {
 	pci_unregister_driver(&igbuio_pci_driver);
 }
+
+// zhou: For some devices which lack support for legacy interrupts, e.g. virtual
+//       function (VF) devices, the igb_uio module may be needed in place of
+//       uio_pci_generic.
 
 module_init(igbuio_pci_init_module);
 module_exit(igbuio_pci_exit_module);

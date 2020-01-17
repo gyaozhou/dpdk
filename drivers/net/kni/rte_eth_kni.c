@@ -100,6 +100,7 @@ eth_kni_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	return nb_pkts;
 }
 
+// zhou: main loop of a control thread, used to
 static void *
 kni_handle_request(void *param)
 {

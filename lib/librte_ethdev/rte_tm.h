@@ -198,6 +198,7 @@ enum rte_tm_dynamic_update_type {
 /**
  * Traffic manager capabilities
  */
+// zhou:
 struct rte_tm_capabilities {
 	/** Maximum number of nodes. */
 	uint32_t n_nodes_max;

@@ -44,6 +44,12 @@ enum rte_page_sizes {
  * Physical memory segment descriptor.
  */
 #define RTE_MEMSEG_FLAG_DO_NOT_FREE (1 << 0)
+
+// zhou: as physical memory can have gaps, the memory is described in a table
+//       of descriptors, and each descriptor (called rte_memseg) describes a
+//       physical page.
+//       Will be managed by "struct rte_mem_config".
+
 /**< Prevent this segment from being freed back to the OS. */
 struct rte_memseg {
 	RTE_STD_C11

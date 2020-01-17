@@ -102,9 +102,11 @@ struct rte_table {
 
 #define RTE_PIPELINE_MAX_NAME_SZ                           124
 
+// zhou: README,
 struct rte_pipeline {
 	/* Input parameters */
 	char name[RTE_PIPELINE_MAX_NAME_SZ];
+    // zhou: CPU location
 	int socket_id;
 	uint32_t offset_port_id;
 
@@ -188,6 +190,7 @@ rte_pipeline_check_params(struct rte_pipeline_params *params)
 	return 0;
 }
 
+// zhou: README,
 struct rte_pipeline *
 rte_pipeline_create(struct rte_pipeline_params *params)
 {
@@ -1309,6 +1312,7 @@ rte_pipeline_action_handler_drop(struct rte_pipeline *p, uint64_t pkts_mask)
 	}
 }
 
+// zhou: README, pipeline framework, similar to netfilter.
 int
 rte_pipeline_run(struct rte_pipeline *p)
 {

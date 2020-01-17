@@ -15,6 +15,7 @@
 #include <rte_lcore.h>
 #include <rte_debug.h>
 
+// zhou: do nothing related with NIC, just show the rte library.
 static int
 lcore_hello(__attribute__((unused)) void *arg)
 {

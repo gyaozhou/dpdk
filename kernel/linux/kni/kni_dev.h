@@ -51,24 +51,36 @@ struct kni_dev {
 	wait_queue_head_t wq;
 	struct mutex sync_lock;
 
+    // zhou: device "net_dev" will be shown as "vEth%u", ethtool and packet could be sent
+    //       receive via it.
+    //       Device "lad_dev" means friend device, work as bearing device for ethtool
+    //       operation. And it should have name "eth%d", but may not be visible.
+    //       Why not merge these two net_device?
+
 	/* kni device */
 	struct net_device *net_dev;
 
+    // zhou: packets to be handled, vEth -> PMD
 	/* queue for packets to be sent out */
 	struct rte_kni_fifo *tx_q;
 
+    // zhou: KNI buffer packets to be handled, PMD -> vEth
 	/* queue for the packets received */
 	struct rte_kni_fifo *rx_q;
 
+    // zhou: DPDK reserve some free mbufs, let vEth -> PMD
 	/* queue for the allocated mbufs those can be used to save sk buffs */
 	struct rte_kni_fifo *alloc_q;
 
+    // zhou: KNI will put completed mbufs here, after PMD -> vEth
 	/* free queue for the mbufs to be freed */
 	struct rte_kni_fifo *free_q;
 
+    // zhou: configuration command, e.g. change MTU, link up/down, vEth -> PMD
 	/* request queue */
 	struct rte_kni_fifo *req_q;
 
+    // zhou: configuration command completed.
 	/* response queue */
 	struct rte_kni_fifo *resp_q;
 

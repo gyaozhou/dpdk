@@ -43,6 +43,7 @@ struct rte_ipv4_hdr {
 	rte_be32_t dst_addr;		/**< destination address */
 } __attribute__((__packed__));
 
+// zhou: CPU/Little Endian should be convert to Network/Big Endian before sending.
 /** Create IPv4 address */
 #define RTE_IPV4(a, b, c, d) ((uint32_t)(((a) & 0xff) << 24) | \
 					   (((b) & 0xff) << 16) | \
@@ -94,6 +95,10 @@ struct rte_ipv4_hdr {
 	RTE_IPV4(224, 0, 0, 0)          /**< Minimal IPv4-multicast address */
 #define RTE_IPV4_MAX_MCAST \
 	RTE_IPV4(239, 255, 255, 255)    /**< Maximum IPv4 multicast address */
+
+// zhou: Multicast IP address range check, check bit should more efficient.
+//       224.  0.  0.  0 == 1110 0000 | 0000 0000 | 0000 0000 | 0000 0000
+//       239.255.255.255 == 1110 1111 | 1111 1111 | 1111 1111 | 1111 1111
 
 #define RTE_IS_IPV4_MCAST(x) \
 	((x) >= RTE_IPV4_MIN_MCAST && (x) <= RTE_IPV4_MAX_MCAST)
@@ -288,6 +293,7 @@ rte_ipv4_cksum(const struct rte_ipv4_hdr *ipv4_hdr)
  * @return
  *   The non-complemented checksum to set in the L4 header.
  */
+// zhou: README, used by PKT_TX_UDP_CKSUM enabled.
 static inline uint16_t
 rte_ipv4_phdr_cksum(const struct rte_ipv4_hdr *ipv4_hdr, uint64_t ol_flags)
 {

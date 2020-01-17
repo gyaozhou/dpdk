@@ -56,6 +56,7 @@ struct rte_kni_ops {
 /**
  * Structure for configuring KNI device.
  */
+// zhou: used in API, for passing KNI configuration from APP.
 struct rte_kni_conf {
 	/*
 	 * KNI name which will be used in relevant network device.
@@ -63,8 +64,11 @@ struct rte_kni_conf {
 	 * memzone name.
 	 */
 	char name[RTE_KNI_NAMESIZE];
+
 	uint32_t core_id;   /* Core ID to bind kernel thread on */
+    // zhou: all vEth associated with one ethdev, share same "group_id"
 	uint16_t group_id;  /* Group ID */
+    // zhou:
 	unsigned mbuf_size; /* mbuf size */
 	struct rte_pci_addr addr; /* depreciated */
 	struct rte_pci_id id; /* depreciated */

@@ -165,6 +165,7 @@ static void *rte_thread_init(void *arg)
 	return start_routine(routine_arg);
 }
 
+// zhou: used to create control thread, and binding to CPU.
 int
 rte_ctrl_thread_create(pthread_t *thread, const char *name,
 		const pthread_attr_t *attr,

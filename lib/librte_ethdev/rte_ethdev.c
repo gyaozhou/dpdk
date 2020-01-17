@@ -47,6 +47,9 @@
 int rte_eth_dev_logtype;
 
 static const char *MZ_RTE_ETH_DEV_DATA = "rte_eth_dev_data";
+
+// zhou: each port corresponding a Ethernet Device, pre-allocated 32 "rte_eth_dev".
+//       Then, set correct value when "rte_eth_dev_create()".
 struct rte_eth_dev rte_eth_devices[RTE_MAX_ETHPORTS];
 
 /* spinlock for eth device callbacks */
@@ -71,6 +74,7 @@ struct rte_eth_xstats_name_off {
 static struct {
 	uint64_t next_owner_id;
 	rte_spinlock_t ownership_lock;
+
 	struct rte_eth_dev_data data[RTE_MAX_ETHPORTS];
 } *rte_eth_dev_shared_data;
 
@@ -383,10 +387,12 @@ rte_eth_dev_shared_data_prepare(void)
 					rte_socket_id(), flags);
 		} else
 			mz = rte_memzone_lookup(MZ_RTE_ETH_DEV_DATA);
+
 		if (mz == NULL)
 			rte_panic("Cannot allocate ethdev shared data\n");
 
 		rte_eth_dev_shared_data = mz->addr;
+
 		if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
 			rte_eth_dev_shared_data->next_owner_id =
 					RTE_ETH_DEV_NO_OWNER + 1;
@@ -434,6 +440,7 @@ rte_eth_dev_allocated(const char *name)
 	return ethdev;
 }
 
+// zhou: allocate a free port_id, hard to connect port_id with PCI Bus addr.
 static uint16_t
 rte_eth_dev_find_free_port(void)
 {
@@ -460,6 +467,8 @@ eth_dev_get(uint16_t port_id)
 	return eth_dev;
 }
 
+// zhou: both physical ethernet device or vdev such as virtio_user/kni/bonding/...
+//       will allocate "struct rte_eth_dev" through rte_eth_vdev_allocate().
 struct rte_eth_dev *
 rte_eth_dev_allocate(const char *name)
 {
@@ -490,7 +499,9 @@ rte_eth_dev_allocate(const char *name)
 		goto unlock;
 	}
 
+    // zhou: alloc a free port, once failure later will be released later.
 	port_id = rte_eth_dev_find_free_port();
+
 	if (port_id == RTE_MAX_ETHPORTS) {
 		RTE_ETHDEV_LOG(ERR,
 			"Reached maximum number of Ethernet ports\n");
@@ -590,6 +601,7 @@ rte_eth_is_valid_owner_id(uint64_t owner_id)
 	return 1;
 }
 
+// zhou: README,
 uint64_t
 rte_eth_find_next_owned_by(uint16_t port_id, const uint64_t owner_id)
 {
@@ -655,6 +667,7 @@ _rte_eth_dev_owner_set(const uint16_t port_id, const uint64_t old_owner_id,
 }
 
 int
+// zhou: set ethdev ownership.
 rte_eth_dev_owner_set(const uint16_t port_id,
 		      const struct rte_eth_dev_owner *owner)
 {
@@ -739,6 +752,8 @@ rte_eth_dev_owner_get(const uint16_t port_id, struct rte_eth_dev_owner *owner)
 	return ret;
 }
 
+// zhou: Return the NUMA socket to which an Ethernet device is connected.
+//       Get via rte_eth_copy_pci_info().
 int
 rte_eth_dev_socket_id(uint16_t port_id)
 {
@@ -754,6 +769,7 @@ rte_eth_dev_get_sec_ctx(uint16_t port_id)
 }
 
 uint16_t
+// zhou: get the number of available port
 rte_eth_dev_count_avail(void)
 {
 	uint16_t p;
@@ -778,6 +794,7 @@ rte_eth_dev_count_total(void)
 	return count;
 }
 
+// zhou: README,
 int
 rte_eth_dev_get_name_by_port(uint16_t port_id, char *name)
 {
@@ -826,6 +843,8 @@ eth_err(uint16_t port_id, int ret)
 	return ret;
 }
 
+
+// zhou: setup/remove TX queues head
 static int
 rte_eth_dev_rx_queue_config(struct rte_eth_dev *dev, uint16_t nb_queues)
 {
@@ -1022,6 +1041,7 @@ rte_eth_dev_tx_queue_stop(uint16_t port_id, uint16_t tx_queue_id)
 
 }
 
+// zhou: setup/remove TX queues head
 static int
 rte_eth_dev_tx_queue_config(struct rte_eth_dev *dev, uint16_t nb_queues)
 {
@@ -1215,6 +1235,13 @@ validate_offloads(uint16_t port_id, uint64_t req_offloads,
 	return ret;
 }
 
+
+// zhou:  README, step 1,
+//        "Configure an Ethernet device.  This function must be invoked first
+//        before any other function in the Ethernet API. This function can also
+//        be re-invoked when a device is in the stopped state."
+//
+//        Refer to header file for more details.
 int
 rte_eth_dev_configure(uint16_t port_id, uint16_t nb_rx_q, uint16_t nb_tx_q,
 		      const struct rte_eth_conf *dev_conf)
@@ -1601,6 +1628,7 @@ rte_eth_dev_config_restore(struct rte_eth_dev *dev,
 	return 0;
 }
 
+// zhou: Step 4,
 int
 rte_eth_dev_start(uint16_t port_id)
 {
@@ -1652,6 +1680,7 @@ rte_eth_dev_start(uint16_t port_id)
 	return 0;
 }
 
+// zhou: stop ethdev, different from close.
 void
 rte_eth_dev_stop(uint16_t port_id)
 {
@@ -1660,6 +1689,7 @@ rte_eth_dev_stop(uint16_t port_id)
 	RTE_ETH_VALID_PORTID_OR_RET(port_id);
 	dev = &rte_eth_devices[port_id];
 
+    // zhou: e.g. "ixgbevf_dev_stop()"
 	RTE_FUNC_PTR_OR_RET(*dev->dev_ops->dev_stop);
 
 	if (dev->data->dev_started == 0) {
@@ -1673,6 +1703,8 @@ rte_eth_dev_stop(uint16_t port_id)
 	(*dev->dev_ops->dev_stop)(dev);
 }
 
+// zhou: link up even if the cable is not ready?
+//       Not supported by ixgbevf.
 int
 rte_eth_dev_set_link_up(uint16_t port_id)
 {
@@ -1709,6 +1741,8 @@ rte_eth_dev_close(uint16_t port_id)
 
 	RTE_FUNC_PTR_OR_RET(*dev->dev_ops->dev_close);
 	dev->data->dev_started = 0;
+
+    // zhou: e.g. "ixgbevf_dev_close()"
 	(*dev->dev_ops->dev_close)(dev);
 
 	/* check behaviour flag - temporary for PMD migration */
@@ -1769,6 +1803,10 @@ rte_eth_dev_is_removed(uint16_t port_id)
 	return ret;
 }
 
+// zhou: Step 3 (RX),
+//       "mp", The pointer to the memory pool from which to allocate *rte_mbuf* network
+//             memory buffers to populate each descriptor of the receive ring.
+//             Used by driver to receive packets.
 int
 rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
 		       uint16_t nb_rx_desc, unsigned int socket_id,
@@ -1923,6 +1961,7 @@ rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
 	return eth_err(port_id, ret);
 }
 
+// zhou: Step 2 (TX),
 int
 rte_eth_rx_hairpin_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
 			       uint16_t nb_rx_desc,
@@ -2027,6 +2066,7 @@ rte_eth_tx_queue_setup(uint16_t port_id, uint16_t tx_queue_id,
 		if (nb_tx_desc == 0)
 			nb_tx_desc = RTE_ETH_DEV_FALLBACK_TX_RINGSIZE;
 	}
+
 	if (nb_tx_desc > dev_info.tx_desc_lim.nb_max ||
 	    nb_tx_desc < dev_info.tx_desc_lim.nb_min ||
 	    nb_tx_desc % dev_info.tx_desc_lim.nb_align != 0) {
@@ -2284,6 +2324,7 @@ rte_eth_promiscuous_get(uint16_t port_id)
 }
 
 int
+// zhou: Enable the receipt of any multicast frame by an Ethernet device.
 rte_eth_allmulticast_enable(uint16_t port_id)
 {
 	struct rte_eth_dev *dev;
@@ -2296,6 +2337,7 @@ rte_eth_allmulticast_enable(uint16_t port_id)
 		return 0;
 
 	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->allmulticast_enable, -ENOTSUP);
+    // zhou: e.g. ixgbe_dev_allmulticast_enable()
 	diag = (*dev->dev_ops->allmulticast_enable)(dev);
 	dev->data->all_multicast = (diag == 0) ? 1 : 0;
 
@@ -2334,6 +2376,7 @@ rte_eth_allmulticast_get(uint16_t port_id)
 	return dev->data->all_multicast;
 }
 
+// zhou:
 int
 rte_eth_link_get(uint16_t port_id, struct rte_eth_link *eth_link)
 {
@@ -2354,6 +2397,7 @@ rte_eth_link_get(uint16_t port_id, struct rte_eth_link *eth_link)
 	return 0;
 }
 
+// zhou: nonblock to get ethdev status
 int
 rte_eth_link_get_nowait(uint16_t port_id, struct rte_eth_link *eth_link)
 {
@@ -2367,6 +2411,7 @@ rte_eth_link_get_nowait(uint16_t port_id, struct rte_eth_link *eth_link)
 		rte_eth_linkstatus_get(dev, eth_link);
 	else {
 		RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->link_update, -ENOTSUP);
+        // zhou: e.g. "ixgbe_dev_link_update()"
 		(*dev->dev_ops->link_update)(dev, 0);
 		*eth_link = dev->data->dev_link;
 	}
@@ -2920,6 +2965,7 @@ set_queue_stats_mapping(uint16_t port_id, uint16_t queue_id, uint8_t stat_idx,
 }
 
 
+// zhou:
 int
 rte_eth_dev_set_tx_queue_stats_mapping(uint16_t port_id, uint16_t tx_queue_id,
 		uint8_t stat_idx)
@@ -2950,6 +2996,8 @@ rte_eth_dev_fw_version_get(uint16_t port_id, char *fw_version, size_t fw_size)
 							fw_version, fw_size));
 }
 
+// zhou: get device hardware capabilities, including per queue and per port.
+//       step 1.2
 int
 rte_eth_dev_info_get(uint16_t port_id, struct rte_eth_dev_info *dev_info)
 {
@@ -2979,6 +3027,7 @@ rte_eth_dev_info_get(uint16_t port_id, struct rte_eth_dev_info *dev_info)
 	dev_info->max_mtu = UINT16_MAX;
 
 	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->dev_infos_get, -ENOTSUP);
+    // zhou: invoke driver's callback function, e.g. ixgbe_dev_info_get()
 	diag = (*dev->dev_ops->dev_infos_get)(dev, dev_info);
 	if (diag != 0) {
 		/* Cleanup already filled in device information */
@@ -3137,6 +3186,8 @@ rte_eth_dev_get_mtu(uint16_t port_id, uint16_t *mtu)
 	return 0;
 }
 
+// zhou: when port is up, this function may failed in some cases.
+//       So stop port firstly or make further investigation.
 int
 rte_eth_dev_set_mtu(uint16_t port_id, uint16_t mtu)
 {
@@ -3163,6 +3214,7 @@ rte_eth_dev_set_mtu(uint16_t port_id, uint16_t mtu)
 			return -EINVAL;
 	}
 
+    // zhou: e.g. "ixgbe_dev_mtu_set()"
 	ret = (*dev->dev_ops->mtu_set)(dev, mtu);
 	if (!ret)
 		dev->data->mtu = mtu;
@@ -3722,6 +3774,7 @@ rte_eth_dev_mac_addr_remove(uint16_t port_id, struct rte_ether_addr *addr)
 	return 0;
 }
 
+// zhou: "Set the default MAC address."
 int
 rte_eth_dev_default_mac_addr_set(uint16_t port_id, struct rte_ether_addr *addr)
 {
@@ -3940,6 +3993,7 @@ RTE_INIT(eth_dev_init_cb_lists)
 		TAILQ_INIT(&rte_eth_devices[i].link_intr_cbs);
 }
 
+// zhou: README, used to set interrupt callback function.
 int
 rte_eth_dev_callback_register(uint16_t port_id,
 			enum rte_eth_event_type event,
@@ -4059,6 +4113,7 @@ rte_eth_dev_callback_unregister(uint16_t port_id,
 	return ret;
 }
 
+// zhou: callback function when interrupt happened.
 int
 _rte_eth_dev_callback_process(struct rte_eth_dev *dev,
 	enum rte_eth_event_type event, void *ret_param)
@@ -4086,6 +4141,7 @@ _rte_eth_dev_callback_process(struct rte_eth_dev *dev,
 	return rc;
 }
 
+// zhou: driver has been detected device.
 void
 rte_eth_dev_probing_finish(struct rte_eth_dev *dev)
 {
@@ -4196,6 +4252,7 @@ rte_eth_dma_zone_reserve(const struct rte_eth_dev *dev, const char *ring_name,
 			RTE_MEMZONE_IOVA_CONTIG, align);
 }
 
+// zhou: Step 0, create ethdev invoked by PMD driver when probed.
 int
 rte_eth_dev_create(struct rte_device *device, const char *name,
 	size_t priv_data_size,
@@ -4209,6 +4266,7 @@ rte_eth_dev_create(struct rte_device *device, const char *name,
 	RTE_FUNC_PTR_OR_ERR_RET(*ethdev_init, -EINVAL);
 
 	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
+        // zhou:
 		ethdev = rte_eth_dev_allocate(name);
 		if (!ethdev)
 			return -ENODEV;
@@ -4236,6 +4294,7 @@ rte_eth_dev_create(struct rte_device *device, const char *name,
 	ethdev->device = device;
 
 	if (ethdev_bus_specific_init) {
+        // zhou: e.g. "eth_dev_pci_specific_init()"
 		retval = ethdev_bus_specific_init(ethdev, bus_init_params);
 		if (retval) {
 			RTE_LOG(ERR, EAL,
@@ -4244,6 +4303,10 @@ rte_eth_dev_create(struct rte_device *device, const char *name,
 		}
 	}
 
+    // zhou: e.g. "eth_ixgbe_dev_init()", device init.
+    //       "The role of the device init function consists of resetting the hardware,
+    //       checking access to Non-volatile Memory (NVM), reading the MAC address
+    //       from NVM etc."
 	retval = ethdev_init(ethdev, init_params);
 	if (retval) {
 		RTE_LOG(ERR, EAL, "ethdev initialisation failed");
@@ -4318,6 +4381,7 @@ rte_eth_dev_rx_intr_ctl_q(uint16_t port_id, uint16_t queue_id,
 	return 0;
 }
 
+// zhou: README,
 int
 rte_eth_dev_rx_intr_enable(uint16_t port_id,
 			   uint16_t queue_id)
@@ -4363,6 +4427,7 @@ rte_eth_dev_filter_supported(uint16_t port_id,
 				RTE_ETH_FILTER_NOP, NULL);
 }
 
+// zhou:
 int
 rte_eth_dev_filter_ctrl(uint16_t port_id, enum rte_filter_type filter_type,
 			enum rte_filter_op filter_op, void *arg)
@@ -4373,10 +4438,12 @@ rte_eth_dev_filter_ctrl(uint16_t port_id, enum rte_filter_type filter_type,
 
 	dev = &rte_eth_devices[port_id];
 	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->filter_ctrl, -ENOTSUP);
+
 	return eth_err(port_id, (*dev->dev_ops->filter_ctrl)(dev, filter_type,
 							     filter_op, arg));
 }
 
+// zhou: callback function will be invoked in "rte_eth_rx_burst()"
 const struct rte_eth_rxtx_callback *
 rte_eth_add_rx_callback(uint16_t port_id, uint16_t queue_id,
 		rte_rx_callback_fn fn, void *user_param)
@@ -4461,6 +4528,7 @@ rte_eth_add_first_rx_callback(uint16_t port_id, uint16_t queue_id,
 	return cb;
 }
 
+// zhou: callback function will be invoked in "rte_eth_tx_burst()"
 const struct rte_eth_rxtx_callback *
 rte_eth_add_tx_callback(uint16_t port_id, uint16_t queue_id,
 		rte_tx_callback_fn fn, void *user_param)
@@ -4643,6 +4711,7 @@ rte_eth_tx_queue_info_get(uint16_t port_id, uint16_t queue_id,
 	return 0;
 }
 
+// zhou: Set the list of multicast addresses to filter on an Ethernet device.
 int
 rte_eth_rx_burst_mode_get(uint16_t port_id, uint16_t queue_id,
 			  struct rte_eth_burst_mode *mode)
@@ -4701,6 +4770,7 @@ rte_eth_dev_set_mc_addr_list(uint16_t port_id,
 	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, -ENODEV);
 
 	dev = &rte_eth_devices[port_id];
+    // zhou: e.g. ixgbe_dev_set_mc_addr_list()
 	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->set_mc_addr_list, -ENOTSUP);
 	return eth_err(port_id, dev->dev_ops->set_mc_addr_list(dev,
 						mc_addr_set, nb_mc_addr));
@@ -4967,6 +5037,9 @@ rte_eth_dev_adjust_nb_desc(uint16_t *nb_desc,
 	*nb_desc = RTE_MAX(*nb_desc, desc_lim->nb_min);
 }
 
+// zhou: README, step 1.1
+//       "Check that numbers of Rx and Tx descriptors satisfy descriptors limits
+//       from the ethernet device information, otherwise adjust them to boundaries."
 int
 rte_eth_dev_adjust_nb_rx_tx_desc(uint16_t port_id,
 				 uint16_t *nb_rx_desc,

@@ -224,6 +224,7 @@ rte_net_skip_ip6_ext(uint16_t proto, const struct rte_mbuf *m, uint32_t *off,
 	return -1;
 }
 
+// zhou: README,
 /* parse mbuf data to get packet type */
 uint32_t rte_net_get_ptype(const struct rte_mbuf *m,
 	struct rte_net_hdr_lens *hdr_lens, uint32_t layers)

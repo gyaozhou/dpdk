@@ -52,6 +52,7 @@
 #define STR_SIZE     1024
 #define POWER_CONVERT_TO_DECIMAL 10
 
+// zhou: adjust CPU P-state by this files
 #define POWER_GOVERNOR_USERSPACE "userspace"
 #define POWER_SYSFILE_GOVERNOR   \
 		"/sys/devices/system/cpu/cpu%u/cpufreq/scaling_governor"
@@ -82,7 +83,9 @@ struct rte_power_info {
 	unsigned int lcore_id;                   /**< Logical core id */
 	uint32_t freqs[RTE_MAX_LCORE_FREQS]; /**< Frequency array */
 	uint32_t nb_freqs;                   /**< number of available freqs */
+    // zhou:
 	FILE *f;                             /**< FD of scaling_setspeed */
+
 	char governor_ori[32];               /**< Original governor name */
 	uint32_t curr_idx;                   /**< Freq index in freqs array */
 	volatile uint32_t state;             /**< Power in use state */
@@ -96,6 +99,7 @@ static struct rte_power_info lcore_power_info[RTE_MAX_LCORE];
  * It is to set specific freq for specific logical core, according to the index
  * of supported frequencies.
  */
+// zhou: write /sys/ files to adjust frequency.
 static int
 set_freq_internal(struct rte_power_info *pi, uint32_t idx)
 {
@@ -486,6 +490,7 @@ power_acpi_cpufreq_set_freq(unsigned int lcore_id, uint32_t index)
 	return set_freq_internal(&(lcore_power_info[lcore_id]), index);
 }
 
+// zhou: README,
 int
 power_acpi_cpufreq_freq_down(unsigned int lcore_id)
 {

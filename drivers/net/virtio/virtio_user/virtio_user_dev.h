@@ -16,7 +16,9 @@ struct virtio_user_queue {
 	bool used_wrap_counter;
 };
 
+// zhou: README, virtio_user_dev is part of private data of "struct rte_eth_dev".
 struct virtio_user_dev {
+    // zhou: different backend implementation will impact frontend ?
 	/* for vhost_user backend */
 	int		vhostfd;
 	int		listenfd;   /* listening fd */

@@ -115,11 +115,14 @@ socket_id_cmp(const void *a, const void *b)
  * processors on the machine. The function will fill the cpu_info
  * structure.
  */
+
+// zhou: fill "lcore_config[]"
 int
 rte_eal_cpu_init(void)
 {
 	/* pointer to global configuration */
 	struct rte_config *config = rte_eal_get_configuration();
+
 	unsigned lcore_id;
 	unsigned count = 0;
 	unsigned int socket_id, prev_socket_id;
@@ -130,6 +133,7 @@ rte_eal_cpu_init(void)
 	 * ones and enable them by default.
 	 */
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+        // zhou: will be updated according user's cli argument.
 		lcore_config[lcore_id].core_index = count;
 
 		/* init cpuset for per lcore config */
@@ -139,28 +143,40 @@ rte_eal_cpu_init(void)
 		socket_id = eal_cpu_socket_id(lcore_id);
 		lcore_to_socket_id[lcore_id] = socket_id;
 
+
 		/* in 1:1 mapping, record related cpu detected state */
 		lcore_config[lcore_id].detected = eal_cpu_detected(lcore_id);
+
 		if (lcore_config[lcore_id].detected == 0) {
+            // zhou: this vCore is disabled by firmware.
 			config->lcore_role[lcore_id] = ROLE_OFF;
+
+            // zhou: missing "lcore_config[lcore_id].core_role = ROLE_OFF;"
+
 			lcore_config[lcore_id].core_index = -1;
 			continue;
 		}
 
+        // zhou: in which case, the lcore is not mapping with CPU 1:1 ???
 		/* By default, lcore 1:1 map to cpu id */
 		CPU_SET(lcore_id, &lcore_config[lcore_id].cpuset);
 
+        // zhou: will be updated according user's cli argument.
 		/* By default, each detected core is enabled */
 		config->lcore_role[lcore_id] = ROLE_RTE;
+
 		lcore_config[lcore_id].core_role = ROLE_RTE;
+
 		lcore_config[lcore_id].core_id = eal_cpu_core_id(lcore_id);
 		lcore_config[lcore_id].socket_id = socket_id;
+
 		RTE_LOG(DEBUG, EAL, "Detected lcore %u as "
 				"core %u on socket %u\n",
 				lcore_id, lcore_config[lcore_id].core_id,
 				lcore_config[lcore_id].socket_id);
 		count++;
 	}
+
 	/* Set the count of enabled logical cores of the EAL configuration */
 	config->lcore_count = count;
 	RTE_LOG(DEBUG, EAL,
@@ -174,6 +190,7 @@ rte_eal_cpu_init(void)
 
 	prev_socket_id = -1;
 	config->numa_node_count = 0;
+
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		socket_id = lcore_to_socket_id[lcore_id];
 		if (socket_id != prev_socket_id)

@@ -30,6 +30,7 @@ struct rte_tcp_hdr {
 	rte_be16_t dst_port; /**< TCP destination port. */
 	rte_be32_t sent_seq; /**< TX data sequence number. */
 	rte_be32_t recv_ack; /**< RX data acknowledgment sequence number. */
+    // zhou: TCP header size = (data_off & 0xf0) >> 2
 	uint8_t  data_off;   /**< Data offset. */
 	uint8_t  tcp_flags;  /**< TCP flags */
 	rte_be16_t rx_win;   /**< RX flow control window. */

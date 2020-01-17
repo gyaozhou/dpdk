@@ -75,6 +75,7 @@ rte_fbk_hash_find_existing(const char *name)
  *   Pointer to hash table structure that is used in future hash table
  *   operations, or NULL on error.
  */
+// zhou: README,
 struct rte_fbk_hash_table *
 rte_fbk_hash_create(const struct rte_fbk_hash_params *params)
 {

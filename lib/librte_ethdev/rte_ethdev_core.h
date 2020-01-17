@@ -606,6 +606,7 @@ typedef int (*eth_tx_hairpin_queue_setup_t)
 /**
  * @internal A structure containing the functions exported by an Ethernet driver.
  */
+// zhou: all possible operations supplied by PMD.
 struct eth_dev_ops {
 	eth_dev_configure_t        dev_configure; /**< Configure device. */
 	eth_dev_start_t            dev_start;     /**< Start device. */
@@ -774,19 +775,30 @@ struct rte_eth_rxtx_callback {
  * memory. This split allows the function pointer and driver data to be per-
  * process, while the actual configuration data for the device is shared.
  */
+// zhou: README,
 struct rte_eth_dev {
+    // zhou: "For performance reasons, the address of the burst-oriented RX and TX
+    //        functions of the Ethernet driver are not contained in the 'eth_dev_ops'
+    //        structure. Instead, they are directly stored at the beginning of the
+    //        'rte_eth_dev' structure to avoid an extra indirect memory access during
+    //        their invocation."
 	eth_rx_burst_t rx_pkt_burst; /**< Pointer to PMD receive function. */
 	eth_tx_burst_t tx_pkt_burst; /**< Pointer to PMD transmit function. */
 	eth_tx_prep_t tx_pkt_prepare; /**< Pointer to PMD transmit prepare function. */
+
 	/**
 	 * Next two fields are per-device data but *data is shared between
 	 * primary and secondary processes and *process_private is per-process
 	 * private. The second one is managed by PMDs if necessary.
 	 */
+    // zhou: README,
 	struct rte_eth_dev_data *data;  /**< Pointer to device data. */
 	void *process_private; /**< Pointer to per-process device data. */
+
 	const struct eth_dev_ops *dev_ops; /**< Functions exported by PMD */
+
 	struct rte_device *device; /**< Backing device */
+
 	struct rte_intr_handle *intr_handle; /**< Device interrupt handle */
 	/** User application callbacks for NIC interrupts */
 	struct rte_eth_dev_cb_list link_intr_cbs;
@@ -800,7 +812,10 @@ struct rte_eth_dev {
 	 * received packets before passing them to the driver for transmission.
 	 */
 	struct rte_eth_rxtx_callback *pre_tx_burst_cbs[RTE_MAX_QUEUES_PER_PORT];
+
+    // zhou: XXX_USED/_ATTACHED/_DEFERRED/_REMOVED
 	enum rte_eth_dev_state state; /**< Flag indicating the port state */
+
 	void *security_ctx; /**< Context for security ops */
 
 	uint64_t reserved_64s[4]; /**< Reserved for future fields */
@@ -817,6 +832,7 @@ struct rte_eth_dev_owner;
  * This structure is safe to place in shared memory to be common among different
  * processes in a multi-process configuration.
  */
+// zhou: DPDK interesting data, not device interresting.
 struct rte_eth_dev_data {
 	char name[RTE_ETH_NAME_MAX_LEN]; /**< Unique identifier name */
 
@@ -834,6 +850,7 @@ struct rte_eth_dev_data {
 
 	struct rte_eth_link dev_link;   /**< Link-level information & status. */
 	struct rte_eth_conf dev_conf;   /**< Configuration applied to device. */
+    // zhou:
 	uint16_t mtu;                   /**< Maximum Transmission Unit. */
 	uint32_t min_rx_buf_size;
 			/**< Common RX buffer size handled by all queues. */

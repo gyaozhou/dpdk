@@ -69,6 +69,7 @@ typedef uint32_t (*rte_hash_function)(const void *key, uint32_t key_len,
 /** Type of function used to compare the hash key. */
 typedef int (*rte_hash_cmp_eq_t)(const void *key1, const void *key2, size_t key_len);
 
+// zhou: pass to rte_hash_create()
 /**
  * Parameters used when creating the hash table.
  */

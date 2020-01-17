@@ -138,6 +138,7 @@ static const struct rte_virtio_xstats_name_off rte_virtio_txq_stat_strings[] = {
 #define VIRTIO_NB_TXQ_XSTATS (sizeof(rte_virtio_txq_stat_strings) / \
 			    sizeof(rte_virtio_txq_stat_strings[0]))
 
+// zhou: cheat to share between vdev(virtio_user) and virtio pmd
 struct virtio_hw_internal virtio_hw_internal[RTE_MAX_ETHPORTS];
 
 static struct virtio_pmd_ctrl *
@@ -899,6 +900,7 @@ virtio_dev_rx_queue_intr_disable(struct rte_eth_dev *dev, uint16_t queue_id)
 /*
  * dev_ops for virtio, bare necessities for basic operation
  */
+// zhou: virtio PMD driver
 static const struct eth_dev_ops virtio_eth_dev_ops = {
 	.dev_configure           = virtio_dev_configure,
 	.dev_start               = virtio_dev_start,
@@ -1508,6 +1510,7 @@ virtio_interrupt_handler(void *param)
 	}
 }
 
+// zhou: README,
 /* set rx and tx handlers according to what is supported */
 static void
 set_rxtx_funcs(struct rte_eth_dev *eth_dev)
@@ -1853,6 +1856,7 @@ virtio_set_vtpci_ops(struct virtio_hw *hw)
 		VTPCI_OPS(hw) = &legacy_ops;
 }
 
+// zhou: README,
 /*
  * This function is based on probe() function in virtio_pci.c
  * It returns 0 on success.
@@ -1872,6 +1876,7 @@ eth_virtio_dev_init(struct rte_eth_dev *eth_dev)
 		return -1;
 	}
 
+    // zhou: set Ethernet device's operations.
 	eth_dev->dev_ops = &virtio_eth_dev_ops;
 
 	if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
@@ -1882,6 +1887,8 @@ eth_virtio_dev_init(struct rte_eth_dev *eth_dev)
 		}
 
 		virtio_set_vtpci_ops(hw);
+
+        // zhou:
 		set_rxtx_funcs(eth_dev);
 
 		return 0;
@@ -1992,6 +1999,7 @@ exit:
 	return ret;
 }
 
+// zhou: physical virtio device detected, set this virtio_pmd driver.
 static int eth_virtio_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 	struct rte_pci_device *pci_dev)
 {

@@ -83,15 +83,22 @@ struct kni_port_params {
 	uint16_t port_id;/* Port ID */
 	unsigned lcore_rx; /* lcore ID for RX */
 	unsigned lcore_tx; /* lcore ID for TX */
+
 	uint32_t nb_lcore_k; /* Number of lcores for KNI multi kernel threads */
+
+    // zhou: more than one KNI devices could be created associated with one ethdev.
 	uint32_t nb_kni; /* Number of KNI devices to be created */
+
 	unsigned lcore_k[KNI_MAX_KTHREAD]; /* lcore ID list for kthreads */
+
+    // zhou: context, include FIFO beteen vEth and DPDK.
 	struct rte_kni *kni[KNI_MAX_KTHREAD]; /* KNI context pointers */
+
 } __rte_cache_aligned;
 
 static struct kni_port_params *kni_port_params_array[RTE_MAX_ETHPORTS];
 
-
+// zhou:
 /* Options for configuring ethernet port */
 static struct rte_eth_conf port_conf = {
 	.txmode = {
@@ -104,8 +111,18 @@ static struct rte_mempool * pktmbuf_pool = NULL;
 
 /* Mask of enabled ports */
 static uint32_t ports_mask = 0;
+
 /* Ports set in promiscuous mode off by default. */
 static int promiscuous_on = 0;
+
+// zhou: "Optional flag to enable monitoring and updating of the Ethernet carrier
+//       state. With this option set, a thread will be started which will
+//       periodically check the Ethernet link status of the physical Ethernet
+//       ports and set the carrier state of the corresponding KNI network
+//       interface to match it. This means that the KNI interface will be
+//       disabled automatically when the Ethernet link goes down and enabled
+//       when the Ethernet link goes up."
+
 /* Monitor link status continually. off by default. */
 static int monitor_links;
 
@@ -198,6 +215,7 @@ kni_burst_free_mbufs(struct rte_mbuf **pkts, unsigned num)
 	}
 }
 
+// zhou: RX thread, PMD -> vEth
 /**
  * Interface to burst rx and enqueue mbufs into rx_q
  */
@@ -215,19 +233,25 @@ kni_ingress(struct kni_port_params *p)
 
 	nb_kni = p->nb_kni;
 	port_id = p->port_id;
+
 	for (i = 0; i < nb_kni; i++) {
+
 		/* Burst rx from eth */
 		nb_rx = rte_eth_rx_burst(port_id, 0, pkts_burst, PKT_BURST_SZ);
 		if (unlikely(nb_rx > PKT_BURST_SZ)) {
 			RTE_LOG(ERR, APP, "Error receiving from eth\n");
 			return;
 		}
+
 		/* Burst tx to kni */
 		num = rte_kni_tx_burst(p->kni[i], pkts_burst, nb_rx);
 		if (num)
 			kni_stats[port_id].rx_packets += num;
 
+        // zhou:
 		rte_kni_handle_request(p->kni[i]);
+
+        // zhou: the last "nb_rx - num" packets were not be sent to KNI success.
 		if (unlikely(num < nb_rx)) {
 			/* Free mbufs not tx to kni interface */
 			kni_burst_free_mbufs(&pkts_burst[num], nb_rx - num);
@@ -236,6 +260,7 @@ kni_ingress(struct kni_port_params *p)
 	}
 }
 
+// zhou: TX thread, vEth -> PMD
 /**
  * Interface to dequeue mbufs from tx_q and burst tx
  */
@@ -253,6 +278,7 @@ kni_egress(struct kni_port_params *p)
 
 	nb_kni = p->nb_kni;
 	port_id = p->port_id;
+
 	for (i = 0; i < nb_kni; i++) {
 		/* Burst rx from kni */
 		num = rte_kni_rx_burst(p->kni[i], pkts_burst, PKT_BURST_SZ);
@@ -272,6 +298,7 @@ kni_egress(struct kni_port_params *p)
 	}
 }
 
+// zhou: DPDK thread running.
 static int
 main_loop(__rte_unused void *arg)
 {
@@ -288,8 +315,11 @@ main_loop(__rte_unused void *arg)
 	enum lcore_rxtx flag = LCORE_NONE;
 
 	RTE_ETH_FOREACH_DEV(i) {
+        // zhou: port is not enabled.
 		if (!kni_port_params_array[i])
 			continue;
+
+        // zhou: find the role of this running lcore
 		if (kni_port_params_array[i]->lcore_rx == (uint8_t)lcore_id) {
 			flag = LCORE_RX;
 			break;
@@ -304,6 +334,7 @@ main_loop(__rte_unused void *arg)
 		RTE_LOG(INFO, APP, "Lcore %u is reading from port %d\n",
 					kni_port_params_array[i]->lcore_rx,
 					kni_port_params_array[i]->port_id);
+
 		while (1) {
 			f_stop = rte_atomic32_read(&kni_stop);
 			f_pause = rte_atomic32_read(&kni_pause);
@@ -313,10 +344,12 @@ main_loop(__rte_unused void *arg)
 				continue;
 			kni_ingress(kni_port_params_array[i]);
 		}
+
 	} else if (flag == LCORE_TX) {
 		RTE_LOG(INFO, APP, "Lcore %u is writing to port %d\n",
 					kni_port_params_array[i]->lcore_tx,
 					kni_port_params_array[i]->port_id);
+
 		while (1) {
 			f_stop = rte_atomic32_read(&kni_stop);
 			f_pause = rte_atomic32_read(&kni_pause);
@@ -326,6 +359,7 @@ main_loop(__rte_unused void *arg)
 				continue;
 			kni_egress(kni_port_params_array[i]);
 		}
+
 	} else
 		RTE_LOG(INFO, APP, "Lcore %u has nothing to do\n", lcore_id);
 
@@ -379,6 +413,29 @@ print_config(void)
 	}
 }
 
+// zhou: only parse option "config". The kernel thread mode is set by Kernel Module
+//       argument.
+//
+//       "The -c coremask or -l corelist parameter of the EAL options should
+//       include the lcores indicated by the lcore_rx and lcore_tx, but does not
+//       need to include lcores indicated by lcore_kthread as they are used to
+//       pin the kernel thread on."
+//
+//       "The lcore_kthread in –config can be configured none, one or more lcore
+//       IDs.
+//       In multiple kernel thread mode, if configured none, a KNI device
+//       will be allocated for each port, while no specific lcore affinity will
+//       be set for its kernel thread. If configured one or more lcore IDs, one
+//       or more KNI devices will be allocated for each port, while specific lcore
+//       affinity will be set for its kernel thread.
+//       In single kernel thread mode, if configured none, a KNI device will be
+//       allocated for each port. If configured one or more lcore IDs, one or more
+//       KNI devices will be allocated for each port while no lcore affinity will
+//       be set as there is only one kernel thread for all KNI devices."
+//
+//       "For example, to run the application with two ports served by six lcores,
+//       one lcore of RX, one lcore of TX, and one lcore of kernel thread for each port:"
+//       ./build/kni -l 4-7 -n 4 -- -P -p 0x3 --config="(0,4,6,8),(1,5,7,9)"
 static int
 parse_config(const char *arg)
 {
@@ -397,6 +454,7 @@ parse_config(const char *arg)
 	uint16_t port_id, nb_kni_port_params = 0;
 
 	memset(&kni_port_params_array, 0, sizeof(kni_port_params_array));
+
 	while (((p = strchr(p0, '(')) != NULL) &&
 		nb_kni_port_params < RTE_MAX_ETHPORTS) {
 		p++;
@@ -429,18 +487,23 @@ parse_config(const char *arg)
 						port_id, RTE_MAX_ETHPORTS);
 			goto fail;
 		}
+
 		if (kni_port_params_array[port_id]) {
 			printf("Port %d has been configured\n", port_id);
 			goto fail;
 		}
+
+        // zhou: allocate "struct kni_port_params"
 		kni_port_params_array[port_id] =
 			rte_zmalloc("KNI_port_params",
 				    sizeof(struct kni_port_params), RTE_CACHE_LINE_SIZE);
+
 		kni_port_params_array[port_id]->port_id = port_id;
 		kni_port_params_array[port_id]->lcore_rx =
 					(uint8_t)int_fld[i++];
 		kni_port_params_array[port_id]->lcore_tx =
 					(uint8_t)int_fld[i++];
+
 		if (kni_port_params_array[port_id]->lcore_rx >= RTE_MAX_LCORE ||
 		kni_port_params_array[port_id]->lcore_tx >= RTE_MAX_LCORE) {
 			printf("lcore_rx %u or lcore_tx %u ID could not "
@@ -450,9 +513,11 @@ parse_config(const char *arg)
 						(unsigned)RTE_MAX_LCORE);
 			goto fail;
 		}
+
 		for (j = 0; i < nb_token && j < KNI_MAX_KTHREAD; i++, j++)
 			kni_port_params_array[port_id]->lcore_k[j] =
 						(uint8_t)int_fld[i];
+
 		kni_port_params_array[port_id]->nb_lcore_k = j;
 	}
 	print_config();
@@ -605,7 +670,9 @@ init_port(uint16_t port)
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		local_port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+
 	ret = rte_eth_dev_configure(port, 1, 1, &local_port_conf);
+
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Could not configure port%u (%d)\n",
 		            (unsigned)port, ret);
@@ -617,14 +684,17 @@ init_port(uint16_t port)
 
 	rxq_conf = dev_info.default_rxconf;
 	rxq_conf.offloads = local_port_conf.rxmode.offloads;
+
 	ret = rte_eth_rx_queue_setup(port, 0, nb_rxd,
 		rte_eth_dev_socket_id(port), &rxq_conf, pktmbuf_pool);
+
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Could not setup up RX queue for "
 				"port%u (%d)\n", (unsigned)port, ret);
 
 	txq_conf = dev_info.default_txconf;
 	txq_conf.offloads = local_port_conf.txmode.offloads;
+
 	ret = rte_eth_tx_queue_setup(port, 0, nb_txd,
 		rte_eth_dev_socket_id(port), &txq_conf);
 	if (ret < 0)
@@ -645,6 +715,7 @@ init_port(uint16_t port)
 	}
 }
 
+// zhou: block up to 9s, until all ports up.
 /* Check the link status of all ports in up to 9s, and print them finally */
 static void
 check_all_ports_link_status(uint32_t port_mask)
@@ -658,11 +729,14 @@ check_all_ports_link_status(uint32_t port_mask)
 
 	printf("\nChecking link status\n");
 	fflush(stdout);
+
 	for (count = 0; count <= MAX_CHECK_TIME; count++) {
 		all_ports_up = 1;
+
 		RTE_ETH_FOREACH_DEV(portid) {
 			if ((port_mask & (1 << portid)) == 0)
 				continue;
+
 			memset(&link, 0, sizeof(link));
 			ret = rte_eth_link_get_nowait(portid, &link);
 			if (ret < 0) {
@@ -684,12 +758,15 @@ check_all_ports_link_status(uint32_t port_mask)
 					printf("Port %d Link Down\n", portid);
 				continue;
 			}
+
 			/* clear all_ports_up flag if any link down */
 			if (link.link_status == ETH_LINK_DOWN) {
+                // zhou: if any link is not up, will wait 100ms
 				all_ports_up = 0;
 				break;
 			}
 		}
+
 		/* after finally printing all link status, get out */
 		if (print_flag == 1)
 			break;
@@ -720,6 +797,7 @@ log_link_state(struct rte_kni *kni, int prev, struct rte_eth_link *link)
 			link->link_speed,
 			link->link_autoneg ?  "(AutoNeg)" : "(Fixed)",
 			link->link_duplex ?  "Full Duplex" : "Half Duplex");
+
 	} else if (prev == ETH_LINK_UP && link->link_status == ETH_LINK_DOWN) {
 		RTE_LOG(INFO, APP, "%s NIC Link is Down.\n",
 			rte_kni_get_name(kni));
@@ -743,9 +821,12 @@ monitor_all_ports_link_status(void *arg)
 
 	while (monitor_links) {
 		rte_delay_ms(500);
+
 		RTE_ETH_FOREACH_DEV(portid) {
+            // zhou: check all enabled ports.
 			if ((ports_mask & (1 << portid)) == 0)
 				continue;
+
 			memset(&link, 0, sizeof(link));
 			ret = rte_eth_link_get_nowait(portid, &link);
 			if (ret < 0) {
@@ -757,6 +838,7 @@ monitor_all_ports_link_status(void *arg)
 			for (i = 0; i < p[portid]->nb_kni; i++) {
 				prev = rte_kni_update_link(p[portid]->kni[i],
 						link.link_status);
+                // zhou: logging
 				log_link_state(p[portid]->kni[i], prev, &link);
 			}
 		}
@@ -785,6 +867,8 @@ kni_change_mtu(uint16_t port_id, unsigned int new_mtu)
 	rte_eth_dev_stop(port_id);
 
 	memcpy(&conf, &port_conf, sizeof(conf));
+
+    // zhou: ETHER_MAX_LEN==1518
 	/* Set new MTU */
 	if (new_mtu > RTE_ETHER_MAX_LEN)
 		conf.rxmode.offloads |= DEV_RX_OFFLOAD_JUMBO_FRAME;
@@ -794,12 +878,14 @@ kni_change_mtu(uint16_t port_id, unsigned int new_mtu)
 	/* mtu + length of header + length of FCS = max pkt length */
 	conf.rxmode.max_rx_pkt_len = new_mtu + KNI_ENET_HEADER_SIZE +
 							KNI_ENET_FCS_SIZE;
+
 	ret = rte_eth_dev_configure(port_id, 1, 1, &conf);
 	if (ret < 0) {
 		RTE_LOG(ERR, APP, "Fail to reconfigure port %d\n", port_id);
 		return ret;
 	}
 
+    // zhou: adjust "nb_rxd" to hardware capability.
 	ret = rte_eth_dev_adjust_nb_rx_tx_desc(port_id, &nb_rxd, NULL);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Could not adjust number of descriptors "
@@ -817,8 +903,11 @@ kni_change_mtu(uint16_t port_id, unsigned int new_mtu)
 
 	rxq_conf = dev_info.default_rxconf;
 	rxq_conf.offloads = conf.rxmode.offloads;
+
+    // zhou: why not change tx_queue again when MTU changed ???
 	ret = rte_eth_rx_queue_setup(port_id, 0, nb_rxd,
 		rte_eth_dev_socket_id(port_id), &rxq_conf, pktmbuf_pool);
+
 	if (ret < 0) {
 		RTE_LOG(ERR, APP, "Fail to setup Rx queue of port %d\n",
 				port_id);
@@ -896,6 +985,7 @@ kni_config_mac_address(uint16_t port_id, uint8_t mac_addr[])
 	return ret;
 }
 
+// zhou: create vEth
 static int
 kni_alloc(uint16_t port_id)
 {
@@ -922,8 +1012,10 @@ kni_alloc(uint16_t port_id)
 		} else
 			snprintf(conf.name, RTE_KNI_NAMESIZE,
 						"vEth%u", port_id);
+
 		conf.group_id = port_id;
 		conf.mbuf_size = MAX_PACKET_SZ;
+
 		/*
 		 * The first KNI device associated to a port
 		 * is the master, for multiple kernel thread
@@ -952,6 +1044,7 @@ kni_alloc(uint16_t port_id)
 			conf.min_mtu = dev_info.min_mtu;
 			conf.max_mtu = dev_info.max_mtu;
 
+            // zhou: handlers of vEth tools operations.
 			memset(&ops, 0, sizeof(ops));
 			ops.port_id = port_id;
 			ops.change_mtu = kni_change_mtu;
@@ -959,12 +1052,16 @@ kni_alloc(uint16_t port_id)
 			ops.config_mac_address = kni_config_mac_address;
 
 			kni = rte_kni_alloc(pktmbuf_pool, &conf, &ops);
+
 		} else
+            // zhou: we can create multiply vEth associate with one ethdev.
+            //       And only the first vEth will respond to operation.
 			kni = rte_kni_alloc(pktmbuf_pool, &conf, NULL);
 
 		if (!kni)
 			rte_exit(EXIT_FAILURE, "Fail to create kni for "
 						"port: %d\n", port_id);
+
 		params[port_id]->kni[i] = kni;
 	}
 
@@ -1046,6 +1143,8 @@ main(int argc, char** argv)
 		/* Skip ports that are not enabled */
 		if (!(ports_mask & (1 << port)))
 			continue;
+
+        // zhou: init ethdev
 		init_port(port);
 
 		if (port >= RTE_MAX_ETHPORTS)
@@ -1054,6 +1153,8 @@ main(int argc, char** argv)
 
 		kni_alloc(port);
 	}
+
+    // zhou: wait for a while, hope all ports link up during this period.
 	check_all_ports_link_status(ports_mask);
 
 	pid = getpid();
@@ -1066,6 +1167,8 @@ main(int argc, char** argv)
 	RTE_LOG(INFO, APP, "========================\n");
 	fflush(stdout);
 
+    // zhou: create a dedicated thread to monitor physical ethernet link carrier
+    //       state. When carrier state changed, set correpsonding vEth also.
 	ret = rte_ctrl_thread_create(&kni_link_tid,
 				     "KNI link status check", NULL,
 				     monitor_all_ports_link_status, NULL);
@@ -1075,6 +1178,9 @@ main(int argc, char** argv)
 
 	/* Launch per-lcore function on every lcore */
 	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MASTER);
+
+    // zhou: this thread should also be blocked to run "main_loop"
+
 	RTE_LCORE_FOREACH_SLAVE(i) {
 		if (rte_eal_wait_lcore(i) < 0)
 			return -1;

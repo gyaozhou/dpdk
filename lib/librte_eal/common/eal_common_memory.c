@@ -888,6 +888,7 @@ rte_extmem_detach(void *va_addr, size_t len)
 	return sync_memory(va_addr, len, false);
 }
 
+// zhou: README,
 /* init memory subsystem */
 int
 rte_eal_memory_init(void)

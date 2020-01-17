@@ -164,16 +164,24 @@ struct igb_advctx_info {
  * Structure associated with each TX queue.
  */
 struct igb_tx_queue {
+    // zhou: memory on the host
 	volatile union e1000_adv_tx_desc *tx_ring; /**< TX ring address */
+
 	uint64_t               tx_ring_phys_addr; /**< TX ring DMA address. */
 	struct igb_tx_entry    *sw_ring; /**< virtual address of SW ring. */
+
+    // zhou: register of NIC
 	volatile uint32_t      *tdt_reg_addr; /**< Address of TDT register. */
 	uint32_t               txd_type;      /**< Device-specific TXD type */
+
+    // zhou: Total Descriptor number
 	uint16_t               nb_tx_desc;    /**< number of TX descriptors. */
 	uint16_t               tx_tail; /**< Current value of TDT register. */
 	uint16_t               tx_head;
 	/**< Index of first used TX descriptor. */
 	uint16_t               queue_id; /**< TX queue index. */
+
+    // zhou: SR-IOV
 	uint16_t               reg_idx;  /**< TX queue register index. */
 	uint16_t               port_id;  /**< Device port identifier. */
 	uint8_t                pthresh;  /**< Prefetch threshold register. */
@@ -323,6 +331,7 @@ igbe_set_xmit_ctx(struct igb_tx_queue* txq,
 	ctx_txd->seqnum_seed = 0;
 }
 
+// zhou: if exist transmit context could be reuse, otherwise have to create a new one.
 /*
  * Check which hardware context can be used. Use the existing match
  * or create a new context descriptor.
@@ -338,6 +347,7 @@ what_advctx_update(struct igb_tx_queue *txq, uint64_t flags,
 			return txq->ctx_curr;
 	}
 
+    // zhou: we updated queue current context here.
 	/* If match with the second context */
 	txq->ctx_curr ^= 1;
 	if (likely((txq->ctx_cache[txq->ctx_curr].flags == flags) &&
@@ -374,6 +384,7 @@ tx_desc_vlan_flags_to_cmdtype(uint64_t ol_flags)
 	return cmdtype;
 }
 
+// zhou: burst transmit packets
 uint16_t
 eth_igb_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	       uint16_t nb_pkts)
@@ -410,6 +421,7 @@ eth_igb_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		tx_pkt = *tx_pkts++;
 		pkt_len = tx_pkt->pkt_len;
 
+        // zhou: just load first cache line length data to cache in case of scatter enabled.
 		RTE_MBUF_PREFETCH_TO_FREE(txe->mbuf);
 
 		/*
@@ -420,8 +432,10 @@ eth_igb_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		 * for the packet, starting from the current position (tx_id)
 		 * in the ring.
 		 */
+        // zhou: the last to be occupied
 		tx_last = (uint16_t) (tx_id + tx_pkt->nb_segs - 1);
 
+        // zhou: several offload features
 		ol_flags = tx_pkt->ol_flags;
 		tx_ol_req = ol_flags & IGB_TX_OFFLOAD_MASK;
 
@@ -435,9 +449,13 @@ eth_igb_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 			tx_ol_req = check_tso_para(tx_ol_req, tx_offload);
 
 			ctx = what_advctx_update(txq, tx_ol_req, tx_offload);
+
 			/* Only allocate context descriptor if required*/
+            // zhou: True == 1(create context), False == 0(reuse).
 			new_ctx = (ctx == IGB_CTX_NUM);
 			ctx = txq->ctx_curr + txq->ctx_start;
+
+            // zhou: move forward 0 or 1.
 			tx_last = (uint16_t) (tx_last + new_ctx);
 		}
 		if (tx_last >= txq->nb_tx_desc)
@@ -494,6 +512,8 @@ eth_igb_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		 */
 		tx_end = sw_ring[tx_end].last_id;
 
+        // zhou: judeg ring slot is free or not, by "e1000_adv_tx_desc.wb.status" ==
+        //       "Descriptor Done"
 		/*
 		 * Check that this descriptor is free.
 		 */
@@ -528,17 +548,23 @@ eth_igb_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 			E1000_ADVTXD_DCMD_IFCS | E1000_ADVTXD_DCMD_DEXT;
 		if (tx_ol_req & PKT_TX_TCP_SEG)
 			pkt_len -= (tx_pkt->l2_len + tx_pkt->l3_len + tx_pkt->l4_len);
+
+        // zhou: Read Format of Advanced Transmit Data Descriptor, status == 0.
+        //       "status" of Write-Back format will be overrided by Hardware with DD.
 		olinfo_status = (pkt_len << E1000_ADVTXD_PAYLEN_SHIFT);
 #if defined(RTE_LIBRTE_IEEE1588)
 		if (ol_flags & PKT_TX_IEEE1588_TMST)
 			cmd_type_len |= E1000_ADVTXD_MAC_TSTAMP;
 #endif
+        // zhou: offload feature is enabled, create one Context Descriptor.
+        //       If all packets to be sent share this setting, only one is enough.
 		if (tx_ol_req) {
 			/* Setup TX Advanced context descriptor if required */
 			if (new_ctx) {
 				volatile struct e1000_adv_tx_context_desc *
 				    ctx_txd;
 
+                // zhou: we make the context descriptor as first one.
 				ctx_txd = (volatile struct
 				    e1000_adv_tx_context_desc *)
 				    &txr[tx_id];
@@ -546,6 +572,7 @@ eth_igb_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 				txn = &sw_ring[txe->next_id];
 				RTE_MBUF_PREFETCH_TO_FREE(txn->mbuf);
 
+                // zhou: we release buffer to pool when reuse the descriptor slot.
 				if (txe->mbuf != NULL) {
 					rte_pktmbuf_free_seg(txe->mbuf);
 					txe->mbuf = NULL;
@@ -558,17 +585,22 @@ eth_igb_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 				txe = txn;
 			}
 
+            // zhou: olinfo_status will be shared between segments;
+            //       cmd_type_len will be updated according segment's "datalen"
 			/* Setup the TX Advanced Data Descriptor */
 			cmd_type_len  |= tx_desc_vlan_flags_to_cmdtype(tx_ol_req);
 			olinfo_status |= tx_desc_cksum_flags_to_olinfo(tx_ol_req);
 			olinfo_status |= (ctx << E1000_ADVTXD_IDX_SHIFT);
 		}
 
+        // zhou: create Data Descriptor for each segment of the packet
 		m_seg = tx_pkt;
 		do {
 			txn = &sw_ring[txe->next_id];
 			txd = &txr[tx_id];
 
+            // zhou: we release buffer to pool when reuse the descriptor slot.
+            //       But the pool is not RX mbuf pool, it is user own.
 			if (txe->mbuf != NULL)
 				rte_pktmbuf_free_seg(txe->mbuf);
 			txe->mbuf = m_seg;
@@ -596,6 +628,8 @@ eth_igb_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		 */
 		txd->read.cmd_type_len |=
 			rte_cpu_to_le_32(E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS);
+
+        // zhou: end of each packet to be sent.
 	}
  end_of_tx:
 	rte_wmb();
@@ -603,6 +637,7 @@ eth_igb_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	/*
 	 * Set the Transmit Descriptor Tail (TDT).
 	 */
+    // zhou: this is global register to notify hardware.
 	E1000_PCI_REG_WRITE_RELAXED(txq->tdt_reg_addr, tx_id);
 	PMD_TX_LOG(DEBUG, "port_id=%u queue_id=%u tx_tail=%u nb_tx=%u",
 		   (unsigned) txq->port_id, (unsigned) txq->queue_id,
@@ -800,6 +835,7 @@ rx_desc_error_to_pkt_flags(uint32_t rx_status)
 		E1000_RXD_ERR_CKSUM_BIT) & E1000_RXD_ERR_CKSUM_MSK];
 }
 
+// zhou: burst receive packets
 uint16_t
 eth_igb_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 	       uint16_t nb_pkts)
@@ -838,6 +874,8 @@ eth_igb_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 		 */
 		rxdp = &rx_ring[rx_id];
 		staterr = rxdp->wb.upper.status_error;
+
+        // zhou: if this ring slot status is "Descriptor Done", means new packet.
 		if (! (staterr & rte_cpu_to_le_32(E1000_RXD_STAT_DD)))
 			break;
 		rxd = *rxdp;
@@ -956,7 +994,10 @@ eth_igb_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 		 * Store the mbuf address into the next entry of the array
 		 * of returned packets.
 		 */
+        // zhou: we don't free the memory, because application will release
 		rx_pkts[nb_rx++] = rxm;
+
+        // zhou: end of each packets
 	}
 	rxq->rx_tail = rx_id;
 
@@ -978,6 +1019,8 @@ eth_igb_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 			   (unsigned) nb_rx);
 		rx_id = (uint16_t) ((rx_id == 0) ?
 				     (rxq->nb_rx_desc - 1) : (rx_id - 1));
+
+        // zhou: notify hardware in case we reached the threshold
 		E1000_PCI_REG_WRITE(rxq->rdt_reg_addr, rx_id);
 		nb_hold = 0;
 	}
@@ -1247,6 +1290,13 @@ eth_igb_recv_scattered_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 	return nb_rx;
 }
 
+
+/********************************************************************************
+ *
+ *                       Rings Management
+ *
+ ********************************************************************************/
+
 /*
  * Maximum number of Ring Descriptors.
  *
@@ -1254,7 +1304,7 @@ eth_igb_recv_scattered_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
  * desscriptors should meet the following condition:
  *      (num_ring_desc * sizeof(struct e1000_rx/tx_desc)) % 128 == 0
  */
-
+// zhou: just release packet buffer to pool
 static void
 igb_tx_queue_release_mbufs(struct igb_tx_queue *txq)
 {
@@ -1270,11 +1320,14 @@ igb_tx_queue_release_mbufs(struct igb_tx_queue *txq)
 	}
 }
 
+// zhou: since the memory will be handled by hardware also, so make sure NIC was stopped.
 static void
 igb_tx_queue_release(struct igb_tx_queue *txq)
 {
 	if (txq != NULL) {
 		igb_tx_queue_release_mbufs(txq);
+
+        // zhou: unlike packets, other memory will be freed to system heap.
 		rte_free(txq->sw_ring);
 		rte_free(txq);
 	}
@@ -1483,6 +1536,8 @@ igb_get_tx_queue_offloads_capa(struct rte_eth_dev *dev)
 	return tx_queue_offload_capa;
 }
 
+// zhou: main() -> rte_eth_tx_queue_setup()
+//       -> eth_dev_ops.tx_queue_setup()/eth_igb_tx_queue_setup().
 int
 eth_igb_tx_queue_setup(struct rte_eth_dev *dev,
 			 uint16_t queue_idx,
@@ -1526,6 +1581,8 @@ eth_igb_tx_queue_setup(struct rte_eth_dev *dev,
 			     "consider setting the TX WTHRESH value to 4, 8, "
 			     "or 16.");
 
+    ////////////////////////////////////////////////////////////////////////////
+    // zhou: memeory reset
 	/* Free memory prior to re-allocation if needed */
 	if (dev->data->tx_queues[queue_idx] != NULL) {
 		igb_tx_queue_release(dev->data->tx_queues[queue_idx]);
@@ -1551,6 +1608,7 @@ eth_igb_tx_queue_setup(struct rte_eth_dev *dev,
 		return -ENOMEM;
 	}
 
+    // zhou: queue structure and ring initilization.
 	txq->nb_tx_desc = nb_desc;
 	txq->pthresh = tx_conf->tx_thresh.pthresh;
 	txq->hthresh = tx_conf->tx_thresh.hthresh;
@@ -1673,6 +1731,7 @@ igb_get_rx_queue_offloads_capa(struct rte_eth_dev *dev)
 	return rx_queue_offload_capa;
 }
 
+// zhou: setup RX queue
 int
 eth_igb_rx_queue_setup(struct rte_eth_dev *dev,
 			 uint16_t queue_idx,
@@ -2359,6 +2418,7 @@ eth_igb_rx_init(struct rte_eth_dev *dev)
 		uint64_t bus_addr;
 		uint32_t rxdctl;
 
+        // zhou: We only need to pre-alloc memory for RX Ring. For TX ring, no need.
 		rxq = dev->data->rx_queues[i];
 
 		rxq->flags = 0;
@@ -2579,6 +2639,7 @@ eth_igb_rx_init(struct rte_eth_dev *dev)
  *  Enable transmit unit.
  *
  **********************************************************************/
+// zhou: Init hardware registers, let NIC know ring is prepared in host memory.
 void
 eth_igb_tx_init(struct rte_eth_dev *dev)
 {
@@ -2613,6 +2674,8 @@ eth_igb_tx_init(struct rte_eth_dev *dev)
 		txdctl |= ((txq->hthresh & 0x1F) << 8);
 		txdctl |= ((txq->wthresh & 0x1F) << 16);
 		txdctl |= E1000_TXDCTL_QUEUE_ENABLE;
+
+        // zhou: setup several threshold
 		E1000_WRITE_REG(hw, E1000_TXDCTL(txq->reg_idx), txdctl);
 	}
 
@@ -2624,6 +2687,7 @@ eth_igb_tx_init(struct rte_eth_dev *dev)
 
 	e1000_config_collision_dist(hw);
 
+    // zhou: kick off TX unit.
 	/* This write will effectively turn on the transmit unit. */
 	E1000_WRITE_REG(hw, E1000_TCTL, tctl);
 }

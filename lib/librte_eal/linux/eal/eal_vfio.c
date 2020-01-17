@@ -41,6 +41,7 @@ struct user_mem_maps {
 	struct user_mem_map maps[VFIO_MAX_USER_MEM_MAPS];
 };
 
+// zhou:
 struct vfio_config {
 	int vfio_enabled;
 	int vfio_container_fd;
@@ -951,6 +952,7 @@ out:
 	return ret;
 }
 
+// zhou: README,
 int
 rte_vfio_enable(const char *modname)
 {
@@ -961,12 +963,14 @@ rte_vfio_enable(const char *modname)
 	rte_spinlock_recursive_t lock = RTE_SPINLOCK_RECURSIVE_INITIALIZER;
 
 	for (i = 0; i < VFIO_MAX_CONTAINERS; i++) {
+
 		vfio_cfgs[i].vfio_container_fd = -1;
 		vfio_cfgs[i].vfio_active_groups = 0;
 		vfio_cfgs[i].vfio_iommu_type = NULL;
 		vfio_cfgs[i].mem_maps.lock = lock;
 
 		for (j = 0; j < VFIO_MAX_GROUPS; j++) {
+
 			vfio_cfgs[i].vfio_groups[j].fd = -1;
 			vfio_cfgs[i].vfio_groups[j].group_num = -1;
 			vfio_cfgs[i].vfio_groups[j].devices = 0;
@@ -992,6 +996,8 @@ rte_vfio_enable(const char *modname)
 		return 0;
 	}
 
+
+    // zhou:
 	if (internal_config.process_type == RTE_PROC_PRIMARY) {
 		/* open a new container */
 		default_vfio_cfg->vfio_container_fd =
@@ -1125,6 +1131,7 @@ vfio_has_supported_extensions(int vfio_container_fd)
 	return 0;
 }
 
+// zhou: README, VFIO container group
 int
 rte_vfio_get_container_fd(void)
 {
@@ -1137,6 +1144,7 @@ rte_vfio_get_container_fd(void)
 
 	/* if we're in a primary process, try to open the container */
 	if (internal_config.process_type == RTE_PROC_PRIMARY) {
+
 		vfio_container_fd = open(VFIO_CONTAINER_PATH, O_RDWR);
 		if (vfio_container_fd < 0) {
 			RTE_LOG(ERR, EAL, "  cannot open VFIO container, "
@@ -2043,6 +2051,7 @@ rte_vfio_container_dma_unmap(int container_fd, uint64_t vaddr, uint64_t iova,
 }
 
 #else
+// zhou: "#ifdef VFIO_PRESENT"
 
 int
 rte_vfio_setup_device(__rte_unused const char *sysfs_base,

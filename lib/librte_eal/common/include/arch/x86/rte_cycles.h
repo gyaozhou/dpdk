@@ -20,6 +20,8 @@ extern int rte_cycles_vmware_tsc_map;
 #include <rte_common.h>
 #include <rte_config.h>
 
+// zhou: this function maybe not so efficient in VM, depnding on hypervisor.
+//       Because, it may cause VM Exit.
 static inline uint64_t
 rte_rdtsc(void)
 {

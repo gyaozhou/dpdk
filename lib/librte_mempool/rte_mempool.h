@@ -95,6 +95,7 @@ struct rte_mempool_cache {
  * A structure that stores the size of mempool elements.
  */
 struct rte_mempool_objsz {
+    // zhou: specified by client
 	uint32_t elt_size;     /**< Size of an element. */
 	uint32_t header_size;  /**< Size of header (before elt). */
 	uint32_t trailer_size; /**< Size of trailer (after elt). */
@@ -133,6 +134,7 @@ struct rte_mempool_objsz {
  * a cookie is also added in this structure preventing corruptions and
  * double-frees.
  */
+// zhou: header for each object.
 struct rte_mempool_objhdr {
 	STAILQ_ENTRY(rte_mempool_objhdr) next; /**< Next in list. */
 	struct rte_mempool *mp;          /**< The mempool owning the object. */
@@ -159,6 +161,7 @@ STAILQ_HEAD(rte_mempool_objhdr_list, rte_mempool_objhdr);
  * In debug mode, each object stored in mempools are suffixed by this
  * trailer structure containing a cookie preventing memory corruptions.
  */
+// zhou: trailer for each object.
 struct rte_mempool_objtlr {
 	uint64_t cookie;                 /**< Debug cookie. */
 };
@@ -210,6 +213,7 @@ struct rte_mempool_info {
 	unsigned int contig_block_size;
 } __rte_cache_aligned;
 
+// zhou: README,
 /**
  * The RTE mempool structure.
  */
@@ -220,15 +224,18 @@ struct rte_mempool {
 	 * RTE_MEMPOOL_NAMESIZE next time the ABI changes
 	 */
 	char name[RTE_MEMZONE_NAMESIZE]; /**< Name of mempool. */
+
 	RTE_STD_C11
 	union {
 		void *pool_data;         /**< Ring or pool to store objects. */
 		uint64_t pool_id;        /**< External mempool identifier. */
 	};
+
 	void *pool_config;               /**< optional args for ops alloc. */
 	const struct rte_memzone *mz;    /**< Memzone where pool is alloc'd. */
 	unsigned int flags;              /**< Flags of the mempool. */
 	int socket_id;                   /**< Socket id passed at create. */
+
 	uint32_t size;                   /**< Max size of the mempool. */
 	uint32_t cache_size;
 	/**< Size of per-lcore default local cache. */
@@ -238,6 +245,7 @@ struct rte_mempool {
 	uint32_t trailer_size;           /**< Size of trailer (after elt). */
 
 	unsigned private_data_size;      /**< Size of private data. */
+
 	/**
 	 * Index into rte_mempool_ops_table array of mempool ops
 	 * structs, which contain callback function pointers.
@@ -247,6 +255,7 @@ struct rte_mempool {
 	 */
 	int32_t ops_index;
 
+    // zhou: array for each local cache
 	struct rte_mempool_cache *local_cache; /**< Per-lcore local cache */
 
 	uint32_t populated_size;         /**< Number of populated objects. */
@@ -1254,6 +1263,8 @@ rte_mempool_cache_free(struct rte_mempool_cache *cache);
  * @return
  *   A pointer to the mempool cache or NULL if disabled or non-EAL thread.
  */
+// zhou: when "cache_size"==0, will bypass cache. And in this case, we can use
+//       mempool on non-EAL thread.
 static __rte_always_inline struct rte_mempool_cache *
 rte_mempool_default_cache(struct rte_mempool *mp, unsigned lcore_id)
 {
@@ -1388,6 +1399,8 @@ rte_mempool_put_bulk(struct rte_mempool *mp, void * const *obj_table,
 	rte_mempool_generic_put(mp, obj_table, n, cache);
 }
 
+
+// zhou: put one object back in the mempool
 /**
  * Put one object back in the mempool.
  *
@@ -1420,6 +1433,7 @@ rte_mempool_put(struct rte_mempool *mp, void *obj)
  *   - >=0: Success; number of objects supplied.
  *   - <0: Error; code of ring dequeue function.
  */
+// zhou: README,
 static __rte_always_inline int
 __mempool_generic_get(struct rte_mempool *mp, void **obj_table,
 		      unsigned int n, struct rte_mempool_cache *cache)
@@ -1559,6 +1573,7 @@ rte_mempool_get_bulk(struct rte_mempool *mp, void **obj_table, unsigned int n)
  *   - 0: Success; objects taken.
  *   - -ENOENT: Not enough entries in the mempool; no object is retrieved.
  */
+// zhou:
 static __rte_always_inline int
 rte_mempool_get(struct rte_mempool *mp, void **obj_p)
 {

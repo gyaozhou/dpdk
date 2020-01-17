@@ -17,6 +17,8 @@ base_path = "/sys/devices/system/cpu"
 fd = open("{}/kernel_max".format(base_path))
 max_cpus = int(fd.read())
 fd.close()
+
+# zhou: loop of hardware threads.
 for cpu in xrange(max_cpus + 1):
     try:
         fd = open("{}/cpu{}/topology/core_id".format(base_path, cpu))
@@ -24,18 +26,27 @@ for cpu in xrange(max_cpus + 1):
         continue
     except:
         break
+
     core = int(fd.read())
     fd.close()
+    
     fd = open("{}/cpu{}/topology/physical_package_id".format(base_path, cpu))
     socket = int(fd.read())
     fd.close()
+
+    # zhou: physical cores
     if core not in cores:
         cores.append(core)
+
+    # zhou: socket
     if socket not in sockets:
         sockets.append(socket)
+        
     key = (socket, core)
     if key not in core_map:
         core_map[key] = []
+
+    # zhou: hardware threads located on this (socket, physic core).
     core_map[key].append(cpu)
 
 print(format("=" * (47 + len(base_path))))

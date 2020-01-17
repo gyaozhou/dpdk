@@ -34,6 +34,7 @@ update_ipv4_udp_headers(struct rte_mbuf *pkt, struct rte_mbuf **segs,
 	}
 }
 
+// zhou: README,
 int
 gso_udp4_segment(struct rte_mbuf *pkt,
 		uint16_t gso_size,

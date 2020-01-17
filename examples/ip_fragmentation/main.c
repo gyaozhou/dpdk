@@ -122,28 +122,37 @@ static int rx_queue_per_lcore = 1;
 #define MBUF_TABLE_SIZE  (2 * MAX(MAX_PKT_BURST, MAX_PACKET_FRAG))
 
 struct mbuf_table {
+    // zhou: free space left in "m_table", each fragment will take one.
 	uint16_t len;
+    // zhou: "rte_ipv4_fragment_packet()" will fill it.
 	struct rte_mbuf *m_table[MBUF_TABLE_SIZE];
 };
 
+// zhou:
 struct rx_queue {
 	struct rte_mempool *direct_pool;
 	struct rte_mempool *indirect_pool;
+
+    // zhou: used for routing, NOT for fragment.
 	struct rte_lpm *lpm;
 	struct rte_lpm6 *lpm6;
+
 	uint16_t portid;
 };
 
 #define MAX_RX_QUEUE_PER_LCORE 16
 #define MAX_TX_QUEUE_PER_PORT 16
+
 struct lcore_queue_conf {
 	uint16_t n_rx_queue;
 	uint16_t tx_queue_id[RTE_MAX_ETHPORTS];
 	struct rx_queue rx_queue_list[MAX_RX_QUEUE_PER_LCORE];
 	struct mbuf_table tx_mbufs[RTE_MAX_ETHPORTS];
 } __rte_cache_aligned;
+
 struct lcore_queue_conf lcore_queue_conf[RTE_MAX_LCORE];
 
+// zhou: pay attention to HW offload capability requirement.
 static struct rte_eth_conf port_conf = {
 	.rxmode = {
 		.max_rx_pkt_len = JUMBO_FRAME_MAX_SIZE,
@@ -210,8 +219,11 @@ struct rte_lpm6_config lpm6_config = {
 		.flags = 0
 };
 
+// zhou: used by ethdev rx and tx fragment.
 static struct rte_mempool *socket_direct_pool[RTE_MAX_NUMA_NODES];
+// zhou: used by tx fragment only.
 static struct rte_mempool *socket_indirect_pool[RTE_MAX_NUMA_NODES];
+
 static struct rte_lpm *socket_lpm[RTE_MAX_NUMA_NODES];
 static struct rte_lpm6 *socket_lpm6[RTE_MAX_NUMA_NODES];
 
@@ -227,6 +239,7 @@ send_burst(struct lcore_queue_conf *qconf, uint16_t n, uint16_t port)
 	m_table = (struct rte_mbuf **)qconf->tx_mbufs[port].m_table;
 
 	ret = rte_eth_tx_burst(port, queueid, m_table, n);
+
 	if (unlikely(ret < n)) {
 		do {
 			rte_pktmbuf_free(m_table[ret]);
@@ -236,6 +249,7 @@ send_burst(struct lcore_queue_conf *qconf, uint16_t n, uint16_t port)
 	return 0;
 }
 
+// zhou: handle one received packet each time.
 static inline void
 l3fwd_simple_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf,
 		uint8_t queueid, uint16_t port_in)
@@ -260,11 +274,13 @@ l3fwd_simple_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf,
 	/* Remove the Ethernet header and trailer from the input packet */
 	rte_pktmbuf_adj(m, (uint16_t)sizeof(struct rte_ether_hdr));
 
+    // zhou: get how many free space for store fragments.
 	/* Build transmission burst */
 	len = qconf->tx_mbufs[port_out].len;
 
 	/* if this is an IPv4 packet */
 	if (RTE_ETH_IS_IPV4_HDR(m->packet_type)) {
+        // zhou: routing related processing.
 		struct rte_ipv4_hdr *ip_hdr;
 		uint32_t ip_dst;
 		/* Read the lookup key (i.e. ip_dst) from the input packet */
@@ -280,27 +296,39 @@ l3fwd_simple_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf,
 			len = qconf->tx_mbufs[port_out].len;
 		}
 
+        // zhou: for this example, "port_out = port_in", max_rx_pkt_len was set to
+        //       JUMBO_FRAME_MAX_SIZE. But the tx is not changd. It means we can
+        //       receive Jumbo Frame packet, but can not send Jumbo Frame packet.
+
 		/* if we don't need to do any fragmentation */
 		if (likely (IPV4_MTU_DEFAULT >= m->pkt_len)) {
+            // zhou: direct refer to received mbuf.
 			qconf->tx_mbufs[port_out].m_table[len] = m;
 			len2 = 1;
 		} else {
+            // zhou: "(uint16_t)(MBUF_TABLE_SIZE - len)" free space to hold
+            //       fragments.
+            //       It will not meet space not enough problem, because MBUF_TABLE_SIZE
+            //       is big enough to hold MAX_PKT_BURST + MAX_PACKET_FRAG
 			len2 = rte_ipv4_fragment_packet(m,
 				&qconf->tx_mbufs[port_out].m_table[len],
 				(uint16_t)(MBUF_TABLE_SIZE - len),
 				IPV4_MTU_DEFAULT,
 				rxq->direct_pool, rxq->indirect_pool);
 
+            // zhou: just decrease the reference count.
 			/* Free input packet */
 			rte_pktmbuf_free(m);
 
 			/* request HW to regenerate IPv4 cksum */
 			ol_flags |= (PKT_TX_IPV4 | PKT_TX_IP_CKSUM);
 
+            // zhou: maybe drop message due to we don't reserve enough mbuf.
 			/* If we fail to fragment the packet */
 			if (unlikely (len2 < 0))
 				return;
 		}
+
 	} else if (RTE_ETH_IS_IPV6_HDR(m->packet_type)) {
 		/* if this is an IPv6 packet */
 		struct rte_ipv6_hdr *ip_hdr;
@@ -337,12 +365,16 @@ l3fwd_simple_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf,
 				return;
 		}
 	}
+    // zhou: not IPv4/Ipv6 packet.
 	/* else, just forward the packet */
 	else {
 		qconf->tx_mbufs[port_out].m_table[len] = m;
 		len2 = 1;
 	}
 
+////////////////////////////////////////////////////////////////////////////////
+
+    // zhou: for each fragment, prepending a ethernet header.
 	for (i = len; i < len + len2; i ++) {
 		void *d_addr_bytes;
 
@@ -355,7 +387,10 @@ l3fwd_simple_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf,
 		}
 
 		m->ol_flags |= ol_flags;
+        // zhou: must be set correctly.
 		m->l2_len = sizeof(struct rte_ether_hdr);
+
+        // zhou: update ethernet header.
 
 		/* 02:00:00:00:00:xx */
 		d_addr_bytes = &eth_hdr->d_addr.addr_bytes[0];
@@ -370,6 +405,8 @@ l3fwd_simple_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf,
 
 	len += len2;
 
+    // zhou: will actual sending them until run out the free space or delay too long.
+    //       TSC is checked in main loop.
 	if (likely(len < MAX_PKT_BURST)) {
 		qconf->tx_mbufs[port_out].len = (uint16_t)len;
 		return;
@@ -377,6 +414,7 @@ l3fwd_simple_forward(struct rte_mbuf *m, struct lcore_queue_conf *qconf,
 
 	/* Transmit packets */
 	send_burst(qconf, (uint16_t)len, port_out);
+
 	qconf->tx_mbufs[port_out].len = 0;
 }
 
@@ -419,6 +457,7 @@ main_loop(__attribute__((unused)) void *dummy)
 		 * TX burst queue drain
 		 */
 		diff_tsc = cur_tsc - prev_tsc;
+        // zhou: even if tx_mbufs[] is not full, still send it if delay too long.
 		if (unlikely(diff_tsc > drain_tsc)) {
 
 			/*
@@ -723,7 +762,9 @@ init_routing_table(void)
 	unsigned i;
 
 	for (socket = 0; socket < RTE_MAX_NUMA_NODES; socket++) {
+
 		if (socket_lpm[socket]) {
+
 			lpm = socket_lpm[socket];
 			/* populate the LPM table */
 			for (i = 0; i < RTE_DIM(l3fwd_ipv4_route_array); i++) {
@@ -825,6 +866,7 @@ init_mem(void)
 			socket_indirect_pool[socket] = mp;
 		}
 
+
 		if (socket_lpm[socket] == NULL) {
 			RTE_LOG(INFO, IP_FRAG, "Creating LPM table on socket %i\n", socket);
 			snprintf(buf, sizeof(buf), "IP_FRAG_LPM_%i", socket);
@@ -893,6 +935,7 @@ main(int argc, char **argv)
 	if (init_mem() < 0)
 		rte_panic("Cannot initialize memory structures!\n");
 
+
 	/* check if portmask has non-existent ports */
 	if (enabled_port_mask & ~(RTE_LEN2MASK(nb_ports, unsigned)))
 		rte_exit(EXIT_FAILURE, "Non-existent ports in portmask!\n");
@@ -917,6 +960,8 @@ main(int argc, char **argv)
 				"Error during getting device (port %u) info: %s\n",
 				portid, strerror(-ret));
 
+        // zhou: make sure it don't beyond the NIC capability.
+        //       Set Jumbo Frame directly.
 		local_port_conf.rxmode.max_rx_pkt_len = RTE_MIN(
 		    dev_info.max_rx_pktlen,
 		    local_port_conf.rxmode.max_rx_pkt_len);
@@ -938,11 +983,14 @@ main(int argc, char **argv)
 
 		rxq = &qconf->rx_queue_list[qconf->n_rx_queue];
 		rxq->portid = portid;
+
 		rxq->direct_pool = socket_direct_pool[socket];
 		rxq->indirect_pool = socket_indirect_pool[socket];
+
 		rxq->lpm = socket_lpm[socket];
 		rxq->lpm6 = socket_lpm6[socket];
 		qconf->n_rx_queue++;
+
 
 		/* init port */
 		printf("Initializing port %d on lcore %u...", portid,
@@ -1042,6 +1090,9 @@ main(int argc, char **argv)
 
 	printf("\n");
 
+
+////////////////////////////////////////////////////////////////////////////////
+
 	/* start ports */
 	RTE_ETH_FOREACH_DEV(portid) {
 		if ((enabled_port_mask & (1 << portid)) == 0) {
@@ -1073,6 +1124,8 @@ main(int argc, char **argv)
 
 	/* launch per-lcore init on every lcore */
 	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MASTER);
+
+////////////////////////////////////////////////////////////////////////////////
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
 		if (rte_eal_wait_lcore(lcore_id) < 0)
 			return -1;

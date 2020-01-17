@@ -8,6 +8,8 @@
 #ifndef _RTE_EVENTDEV_H_
 #define _RTE_EVENTDEV_H_
 
+// zhou: README,
+
 /**
  * @file
  *
@@ -876,6 +878,9 @@ rte_event_dev_stop_flush_callback_register(uint8_t dev_id,
 int
 rte_event_dev_close(uint8_t dev_id);
 
+// zhou: for a ordered event queue, we want events within it could be processed in on
+//       multicore, but the output could keep in same order as before.
+//       Looks hardest in all three.
 /* Scheduler type definitions */
 #define RTE_SCHED_TYPE_ORDERED          0
 /**< Ordered scheduling
@@ -1002,6 +1007,8 @@ rte_event_dev_close(uint8_t dev_id);
  * The generic *rte_event* structure to hold the event attributes
  * for dequeue and enqueue operation
  */
+
+// zhou: README,
 RTE_STD_C11
 struct rte_event {
 	/** WORD0 */
@@ -1063,6 +1070,8 @@ struct rte_event {
 			 */
 		};
 	};
+
+    // zhou: union for payload.
 	/** WORD1 */
 	union {
 		uint64_t u64;

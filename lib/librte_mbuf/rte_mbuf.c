@@ -32,6 +32,8 @@
 #include <rte_errno.h>
 #include <rte_memcpy.h>
 
+// zhou: init mempool private space which used by mbuf store
+//       "rte_pktmbuf_pool_private".
 /*
  * pktmbuf pool constructor, given as a callback function to
  * rte_mempool_create(), or called directly if using
@@ -67,6 +69,7 @@ rte_pktmbuf_pool_init(struct rte_mempool *mp, void *opaque_arg)
 	memcpy(mbp_priv, user_mbp_priv, sizeof(*mbp_priv));
 }
 
+// zhou: callback function, used in loop to init each object in mempool.
 /*
  * pktmbuf constructor, given as a callback function to
  * rte_mempool_obj_iter() or rte_mempool_create().
@@ -83,6 +86,7 @@ rte_pktmbuf_init(struct rte_mempool *mp,
 
 	priv_size = rte_pktmbuf_priv_size(mp);
 	mbuf_size = sizeof(struct rte_mbuf) + priv_size;
+
 	buf_len = rte_pktmbuf_data_room_size(mp);
 
 	RTE_ASSERT(RTE_ALIGN(priv_size, RTE_MBUF_PRIV_ALIGN) == priv_size);
@@ -96,6 +100,7 @@ rte_pktmbuf_init(struct rte_mempool *mp,
 	m->buf_iova = rte_mempool_virt2iova(m) + mbuf_size;
 	m->buf_len = (uint16_t)buf_len;
 
+    // zhou: reserve some headroom from data room.
 	/* keep some headroom between start of buffer and data */
 	m->data_off = RTE_MIN(RTE_PKTMBUF_HEADROOM, (uint16_t)m->buf_len);
 
@@ -103,10 +108,14 @@ rte_pktmbuf_init(struct rte_mempool *mp,
 	m->pool = mp;
 	m->nb_segs = 1;
 	m->port = MBUF_INVALID_PORT;
+
+    // zhou: referenct count set as 1 when init mempool.
+    //       So all mbuf should be set correct value as inited when put back to mbuf pool.
 	rte_mbuf_refcnt_set(m, 1);
 	m->next = NULL;
 }
 
+// zhou: allocate mempool used by mbuf, allocate objects, then init them.
 /* Helper to create a mbuf pool with given mempool ops name*/
 struct rte_mempool *
 rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
@@ -125,6 +134,8 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 		rte_errno = EINVAL;
 		return NULL;
 	}
+
+    // zhou: mempool elt_size == such three parts !!!
 	elt_size = sizeof(struct rte_mbuf) + (unsigned)priv_size +
 		(unsigned)data_room_size;
 	memset(&mbp_priv, 0, sizeof(mbp_priv));
@@ -136,6 +147,8 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 	if (mp == NULL)
 		return NULL;
 
+    // zhou: by this way, client could specify ops by cli:
+    //       "OPT_MBUF_POOL_OPS_NAME".
 	if (mp_ops_name == NULL)
 		mp_ops_name = rte_mbuf_best_mempool_ops();
 	ret = rte_mempool_set_ops_byname(mp, mp_ops_name, NULL);
@@ -145,8 +158,11 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 		rte_errno = -ret;
 		return NULL;
 	}
+
+    // zhou: init mempool private data.
 	rte_pktmbuf_pool_init(mp, &mbp_priv);
 
+    // zhou: still use mempool default way to allocate memory for objects.
 	ret = rte_mempool_populate_default(mp);
 	if (ret < 0) {
 		rte_mempool_free(mp);
@@ -159,6 +175,11 @@ rte_pktmbuf_pool_create_by_ops(const char *name, unsigned int n,
 	return mp;
 }
 
+// zhou: create mbuf pool, and init objects.
+//       Unlike mempool, there is a "struct rte_mempool" to manage pool itself,
+//       and "struct rte_mempool_objhdr" for each object.
+//       There is only "struct rte_mbuf" for each mbuf and for pool management
+//       depending on mempool provided methods.
 /* helper to create a mbuf pool */
 struct rte_mempool *
 rte_pktmbuf_pool_create(const char *name, unsigned int n,

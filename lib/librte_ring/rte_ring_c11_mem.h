@@ -10,6 +10,7 @@
 #ifndef _RTE_RING_C11_MEM_H_
 #define _RTE_RING_C11_MEM_H_
 
+// zhou: README,
 static __rte_always_inline void
 update_tail(struct rte_ring_headtail *ht, uint32_t old_val, uint32_t new_val,
 		uint32_t single, uint32_t enqueue)
@@ -27,6 +28,8 @@ update_tail(struct rte_ring_headtail *ht, uint32_t old_val, uint32_t new_val,
 	__atomic_store_n(&ht->tail, new_val, __ATOMIC_RELEASE);
 }
 
+
+// zhou: README,
 /**
  * @internal This function updates the producer head for enqueue
  *
@@ -103,6 +106,7 @@ __rte_ring_move_prod_head(struct rte_ring *r, unsigned int is_sp,
 	return n;
 }
 
+// zhou: README,
 /**
  * @internal This function updates the consumer head for dequeue
  *

@@ -25,11 +25,15 @@
 #include "eal_private.h"
 #include "eal_memcfg.h"
 
+// zhou: define a TAILQ which manage TAILQ from different libraries.
 TAILQ_HEAD(rte_tailq_elem_head, rte_tailq_elem);
+
+// zhou:
 /* local tailq list */
 static struct rte_tailq_elem_head rte_tailq_elem_head =
 	TAILQ_HEAD_INITIALIZER(rte_tailq_elem_head);
 
+// zhou: used to manage "rte_eal_get_configuration()->mem_config.tailq_head[]"
 /* number of tailqs registered, -1 before call to rte_eal_tailqs_init */
 static int rte_tailqs_count = -1;
 
@@ -70,6 +74,7 @@ rte_dump_tailq(FILE *f)
 	rte_mcfg_tailq_read_unlock();
 }
 
+// zhou: "name", e.g. RTE_TAILQ_RING_NAME
 static struct rte_tailq_head *
 rte_eal_tailq_create(const char *name)
 {
@@ -77,11 +82,13 @@ rte_eal_tailq_create(const char *name)
 
 	if (!rte_eal_tailq_lookup(name) &&
 	    (rte_tailqs_count + 1 < RTE_MAX_TAILQ)) {
+
 		struct rte_mem_config *mcfg;
 
 		mcfg = rte_eal_get_configuration()->mem_config;
 		head = &mcfg->tailq_head[rte_tailqs_count];
 		strlcpy(head->name, name, sizeof(head->name) - 1);
+        // zhou: user allocate tailq will be linked in.
 		TAILQ_INIT(&head->tailq_head);
 		rte_tailqs_count++;
 	}
@@ -89,6 +96,8 @@ rte_eal_tailq_create(const char *name)
 	return head;
 }
 
+// zhou: update process local global variable only, both primary and secondary
+//       process will update indepently.
 /* local register, used to store "early" tailqs before rte_eal_init() and to
  * ensure secondary process only registers tailqs once. */
 static int
@@ -101,10 +110,13 @@ rte_eal_tailq_local_register(struct rte_tailq_elem *t)
 			return -1;
 	}
 
+    // zhou: insert to global list.
 	TAILQ_INSERT_TAIL(&rte_tailq_elem_head, t, next);
 	return 0;
 }
 
+// zhou: init shared memory in case of Primary Process, otherwise keep aline
+//       with shared memory.
 static void
 rte_eal_tailq_update(struct rte_tailq_elem *t)
 {
@@ -112,13 +124,25 @@ rte_eal_tailq_update(struct rte_tailq_elem *t)
 		/* primary process is the only one that creates */
 		t->head = rte_eal_tailq_create(t->name);
 	} else {
+        // zhou: once its NULL, means not be allocated by Primary Process.
+        //       NOT in shared memory. So we should make Primary Process init
+        //       firstly, otherwise Secondary Process will be error.
 		t->head = rte_eal_tailq_lookup(t->name);
 	}
 }
 
+// zhou: register L2 tailq from the different dpdk libraries to L1. L2 means
+//       different kinds of tailq, e.g. "rte_ring_list", "rte_mempool_list", ...
+//       L1: Tailq Queue, manage differernt kinds tailq definition;
+//           L2: One Tailq Queue implementation, manage user allocated lists
+//               L3: User defined data structure (maybe list), manage all user data.
+//               L3: ...
+//           L2: ...
 int
 rte_eal_tailq_register(struct rte_tailq_elem *t)
 {
+    // zhou: process local, used to store new tailq in process local global
+    //       variable list first. Then will be inited in shared memory.
 	if (rte_eal_tailq_local_register(t) < 0) {
 		RTE_LOG(ERR, EAL,
 			"%s tailq is already registered\n", t->name);
@@ -128,7 +152,11 @@ rte_eal_tailq_register(struct rte_tailq_elem *t)
 	/* if a register happens after rte_eal_tailqs_init(), then we can update
 	 * tailq head */
 	if (rte_tailqs_count >= 0) {
+        // zhou: once this function invoked after main() invoked ("rte_tailqs_count"
+        //       updated after main()).
+        //       It should take care of shared memory by itself.
 		rte_eal_tailq_update(t);
+
 		if (t->head == NULL) {
 			RTE_LOG(ERR, EAL,
 				"Cannot initialize tailq: %s\n", t->name);
@@ -144,6 +172,7 @@ error:
 	return -1;
 }
 
+// zhou: invoked in main()/rte_eal_init(), for shared memory initilization.
 int
 rte_eal_tailqs_init(void)
 {
@@ -151,10 +180,13 @@ rte_eal_tailqs_init(void)
 
 	rte_tailqs_count = 0;
 
+    // zhou: for each init in "early" tailqs.
 	TAILQ_FOREACH(t, &rte_tailq_elem_head, next) {
+
 		/* second part of register job for "early" tailqs, see
 		 * rte_eal_tailq_register and EAL_REGISTER_TAILQ */
 		rte_eal_tailq_update(t);
+
 		if (t->head == NULL) {
 			RTE_LOG(ERR, EAL,
 				"Cannot initialize tailq: %s\n", t->name);

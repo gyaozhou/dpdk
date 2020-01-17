@@ -14,6 +14,7 @@ enum cpu_register_t {
 	RTE_REG_EDX,
 };
 
+// zhou: typedef array
 typedef uint32_t cpuid_registers_t[4];
 
 #endif /* RTE_CPUID_H */

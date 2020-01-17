@@ -2392,6 +2392,7 @@ parse_and_check_key_hexa_digit(char *key, int idx)
 	return hexa_v;
 }
 
+// zhou:
 static void
 cmd_config_rss_hash_key_parsed(void *parsed_result,
 			       __attribute__((unused)) struct cmdline *cl,
@@ -2436,6 +2437,7 @@ cmd_config_rss_hash_key_parsed(void *parsed_result,
 			return;
 		hash_key[i] = (uint8_t) ((xdgt0 * 16) + xdgt1);
 	}
+
 	port_rss_hash_key_update(res->port_id, res->rss_type, hash_key,
 			hash_key_size);
 }
@@ -2460,6 +2462,7 @@ cmdline_parse_token_string_t cmd_config_rss_hash_key_rss_type =
 cmdline_parse_token_string_t cmd_config_rss_hash_key_value =
 	TOKEN_STRING_INITIALIZER(struct cmd_config_rss_hash_key, key, NULL);
 
+// zhou: action of CLI, README
 cmdline_parse_inst_t cmd_config_rss_hash_key = {
 	.f = cmd_config_rss_hash_key_parsed,
 	.data = NULL,
@@ -2990,6 +2993,8 @@ cmdline_parse_token_string_t cmd_config_rss_reta_list_name =
 cmdline_parse_token_string_t cmd_config_rss_reta_list_of_items =
         TOKEN_STRING_INITIALIZER(struct cmd_config_rss_reta, list_of_items,
                                  NULL);
+
+// zhou: README,
 cmdline_parse_inst_t cmd_config_rss_reta = {
 	.f = cmd_set_rss_reta_parsed,
 	.data = NULL,
@@ -3191,6 +3196,7 @@ struct cmd_config_dcb {
 	cmdline_fixed_string_t pfc_en;
 };
 
+// zhou: README,
 static void
 cmd_config_dcb_parsed(void *parsed_result,
                         __attribute__((unused)) struct cmdline *cl,
@@ -7189,10 +7195,12 @@ struct cmd_start_result {
 cmdline_parse_token_string_t cmd_start_start =
 	TOKEN_STRING_INITIALIZER(struct cmd_start_result, start, "start");
 
+
 static void cmd_start_parsed(__attribute__((unused)) void *parsed_result,
 			     __attribute__((unused)) struct cmdline *cl,
 			     __attribute__((unused)) void *data)
 {
+    // zhou: "start"
 	start_packet_forwarding(0);
 }
 
@@ -7217,6 +7225,7 @@ cmd_start_tx_first_parsed(__attribute__((unused)) void *parsed_result,
 			  __attribute__((unused)) struct cmdline *cl,
 			  __attribute__((unused)) void *data)
 {
+    // zhou: "start tx_first"
 	start_packet_forwarding(1);
 }
 
@@ -8867,6 +8876,7 @@ struct cmd_vf_rate_limit_result {
 	uint64_t q_msk_val;
 };
 
+// zhou: VF TX rate limitation.
 static void cmd_vf_rate_limit_parsed(void *parsed_result,
 		__attribute__((unused)) struct cmdline *cl,
 		__attribute__((unused)) void *data)
@@ -12621,6 +12631,7 @@ struct cmd_mcast_addr_result {
 	struct rte_ether_addr mc_addr;
 };
 
+// zhou: README,
 static void cmd_mcast_addr_parsed(void *parsed_result,
 		__attribute__((unused)) struct cmdline *cl,
 		__attribute__((unused)) void *data)
@@ -19185,9 +19196,11 @@ cmdline_parse_ctx_t main_ctx[] = {
 	(cmdline_parse_inst_t *)&cmd_showdevice,
 	(cmdline_parse_inst_t *)&cmd_showcfg,
 	(cmdline_parse_inst_t *)&cmd_showfwdall,
+    // zhou: README,
 	(cmdline_parse_inst_t *)&cmd_start,
 	(cmdline_parse_inst_t *)&cmd_start_tx_first,
 	(cmdline_parse_inst_t *)&cmd_start_tx_first_n,
+
 	(cmdline_parse_inst_t *)&cmd_set_link_up,
 	(cmdline_parse_inst_t *)&cmd_set_link_down,
 	(cmdline_parse_inst_t *)&cmd_reset,
@@ -19262,7 +19275,9 @@ cmdline_parse_ctx_t main_ctx[] = {
 	(cmdline_parse_inst_t *)&cmd_write_reg_bit_field,
 	(cmdline_parse_inst_t *)&cmd_write_reg_bit,
 	(cmdline_parse_inst_t *)&cmd_read_rxd_txd,
+
 	(cmdline_parse_inst_t *)&cmd_stop,
+
 	(cmdline_parse_inst_t *)&cmd_mac_addr,
 	(cmdline_parse_inst_t *)&cmd_set_fwd_eth_peer,
 	(cmdline_parse_inst_t *)&cmd_set_qmap,
@@ -19305,6 +19320,7 @@ cmdline_parse_ctx_t main_ctx[] = {
 	(cmdline_parse_inst_t *)&cmd_reset_mirror_rule,
 	(cmdline_parse_inst_t *)&cmd_showport_rss_hash,
 	(cmdline_parse_inst_t *)&cmd_showport_rss_hash_key,
+    // zhou:
 	(cmdline_parse_inst_t *)&cmd_config_rss_hash_key,
 	(cmdline_parse_inst_t *)&cmd_dump,
 	(cmdline_parse_inst_t *)&cmd_dump_one,

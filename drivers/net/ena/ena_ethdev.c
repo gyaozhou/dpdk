@@ -235,6 +235,7 @@ static int ena_xstats_get_by_id(struct rte_eth_dev *dev,
 				uint64_t *values,
 				unsigned int n);
 
+// zhou: comparing to ixgbe, quite few operations provided by ENA.
 static const struct eth_dev_ops ena_dev_ops = {
 	.dev_configure        = ena_dev_configure,
 	.dev_infos_get        = ena_infos_get,
@@ -2563,6 +2564,7 @@ static int ena_xstats_get_by_id(struct rte_eth_dev *dev,
 /*********************************************************************
  *  PMD configuration
  *********************************************************************/
+
 static int eth_ena_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 	struct rte_pci_device *pci_dev)
 {
@@ -2575,6 +2577,7 @@ static int eth_ena_pci_remove(struct rte_pci_device *pci_dev)
 	return rte_eth_dev_pci_generic_remove(pci_dev, eth_ena_dev_uninit);
 }
 
+// zhou:
 static struct rte_pci_driver rte_ena_pmd = {
 	.id_table = pci_id_ena_map,
 	.drv_flags = RTE_PCI_DRV_NEED_MAPPING | RTE_PCI_DRV_INTR_LSC |

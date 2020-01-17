@@ -72,6 +72,7 @@ pipeline_find(const char *name)
 	return NULL;
 }
 
+// zhou: README,
 struct pipeline *
 pipeline_create(const char *name, struct pipeline_params *params)
 {
@@ -109,6 +110,7 @@ pipeline_create(const char *name, struct pipeline_params *params)
 		rte_ring_free(msgq_req);
 		return NULL;
 	}
+
 
 	pp.name = name;
 	pp.socket_id = (int) params->cpu_id;

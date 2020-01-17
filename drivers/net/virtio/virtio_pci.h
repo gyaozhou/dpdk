@@ -233,6 +233,7 @@ struct virtio_pci_ops {
 
 struct virtio_net_config;
 
+// zhou: private data space within "struct rte_eth_dev".
 struct virtio_hw {
 	struct virtnet_ctl *cvq;
 	uint64_t    req_guest_features;

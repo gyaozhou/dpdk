@@ -11,6 +11,7 @@
 
 #define	PRIME_VALUE	0xeaad8405
 
+// zhou: get position of bucket.
 #define	IP_FRAG_TBL_POS(tbl, sig)	\
 	((tbl)->pkt + ((sig) & (tbl)->entry_mask))
 
@@ -18,7 +19,9 @@ static inline void
 ip_frag_tbl_add(struct rte_ip_frag_tbl *tbl,  struct ip_frag_pkt *fp,
 	const struct ip_frag_key *key, uint64_t tms)
 {
+    // zhou: just means fp->key = *key;
 	fp->key = key[0];
+
 	ip_frag_reset(fp, tms);
 	TAILQ_INSERT_TAIL(&tbl->lru, fp, lru);
 	tbl->use_entries++;
@@ -30,9 +33,12 @@ ip_frag_tbl_reuse(struct rte_ip_frag_tbl *tbl, struct rte_ip_frag_death_row *dr,
 	struct ip_frag_pkt *fp, uint64_t tms)
 {
 	ip_frag_free(fp, dr);
+
 	ip_frag_reset(fp, tms);
+
 	TAILQ_REMOVE(&tbl->lru, fp, lru);
 	TAILQ_INSERT_TAIL(&tbl->lru, fp, lru);
+
 	IP_FRAG_TBL_STAT_UPDATE(&tbl->stat, reuse_num, 1);
 }
 
@@ -95,6 +101,7 @@ ip_frag_process(struct ip_frag_pkt *fp, struct rte_ip_frag_death_row *dr,
 
 	fp->frag_size += len;
 
+    // zhou: once it is first fragment, store it in fixed place.
 	/* this is the first fragment. */
 	if (ofs == 0) {
 		idx = (fp->frags[IP_FIRST_FRAG_IDX].mb == NULL) ?
@@ -102,6 +109,8 @@ ip_frag_process(struct ip_frag_pkt *fp, struct rte_ip_frag_death_row *dr,
 
 	/* this is the last fragment. */
 	} else if (more_frags == 0) {
+        // zhou: once it is last fragment, store it in fixed space.
+
 		fp->total_size = ofs + len;
 		idx = (fp->frags[IP_LAST_FRAG_IDX].mb == NULL) ?
 				IP_LAST_FRAG_IDX : UINT32_MAX;
@@ -210,6 +219,7 @@ ip_frag_process(struct ip_frag_pkt *fp, struct rte_ip_frag_death_row *dr,
 
 	/* we are done with that entry, invalidate it. */
 	ip_frag_key_invalidate(&fp->key);
+
 	return mb;
 }
 
@@ -237,10 +247,14 @@ ip_frag_find(struct rte_ip_frag_tbl *tbl, struct rte_ip_frag_death_row *dr,
 	IP_FRAG_TBL_STAT_UPDATE(&tbl->stat, find_num, 1);
 
 	if ((pkt = ip_frag_lookup(tbl, key, tms, &free, &stale)) == NULL) {
+        // zhou: there is no matched entry, then "free" refer to the slot,
+        //       "stale" slots need to recycle.
 
 		/*timed-out entry, free and invalidate it*/
 		if (stale != NULL) {
 			ip_frag_tbl_del(tbl, dr, stale);
+
+            // zhou: first use recycled stale entry
 			free = stale;
 
 		/*
@@ -250,11 +264,15 @@ ip_frag_find(struct rte_ip_frag_tbl *tbl, struct rte_ip_frag_death_row *dr,
 		 */
 		} else if (free != NULL &&
 				tbl->max_entries <= tbl->use_entries) {
+
 			lru = TAILQ_FIRST(&tbl->lru);
 			if (max_cycles + lru->start < tms) {
 				ip_frag_tbl_del(tbl, dr, lru);
 			} else {
+                // zhou: run out free entries and no expired entry could recycle,
+                //       set free=NULL, means no free entry.
 				free = NULL;
+
 				IP_FRAG_TBL_STAT_UPDATE(&tbl->stat,
 					fail_nospace, 1);
 			}
@@ -272,15 +290,23 @@ ip_frag_find(struct rte_ip_frag_tbl *tbl, struct rte_ip_frag_death_row *dr,
 	 * and reuse it.
 	 */
 	} else if (max_cycles + pkt->start < tms) {
+        // zhou: find the matched entry, but already expired.
+
+        // zhou: reuse means, the key info is not deleted.
 		ip_frag_tbl_reuse(tbl, dr, pkt, tms);
 	}
 
 	IP_FRAG_TBL_STAT_UPDATE(&tbl->stat, fail_total, (pkt == NULL));
 
+    // zhou: last updated entry.
 	tbl->last = pkt;
+
+    // zhou: just determine the entry, make sure key slot, NOT put new mbuf.
 	return pkt;
 }
 
+// zhou: find any match existing entry. If not, find empty slot, find stale slot
+//       at the same time.
 struct ip_frag_pkt *
 ip_frag_lookup(struct rte_ip_frag_tbl *tbl,
 	const struct ip_frag_key *key, uint64_t tms,
@@ -310,6 +336,7 @@ ip_frag_lookup(struct rte_ip_frag_tbl *tbl,
 	p2 = IP_FRAG_TBL_POS(tbl, sig2);
 
 	for (i = 0; i != assoc; i++) {
+
 		if (p1->key.key_len == IPV4_KEYLEN)
 			IP_FRAG_LOG(DEBUG, "%s:%d:\n"
 					"tbl: %p, max_entries: %u, use_entries: %u\n"
@@ -329,6 +356,8 @@ ip_frag_lookup(struct rte_ip_frag_tbl *tbl,
 					p1, i, assoc,
 			IPv6_KEY_BYTES(p1[i].key.src_dst), p1[i].key.id, p1[i].start);
 
+        // zhou: sig1
+        //       Preserve empty slot, stale checking and comparing in one loop.
 		if (ip_frag_key_cmp(key, &p1[i].key) == 0)
 			return p1 + i;
 		else if (ip_frag_key_is_empty(&p1[i].key))
@@ -355,6 +384,7 @@ ip_frag_lookup(struct rte_ip_frag_tbl *tbl,
 					p2, i, assoc,
 			IPv6_KEY_BYTES(p2[i].key.src_dst), p2[i].key.id, p2[i].start);
 
+        // zhou: sig2
 		if (ip_frag_key_cmp(key, &p2[i].key) == 0)
 			return p2 + i;
 		else if (ip_frag_key_is_empty(&p2[i].key))
@@ -363,7 +393,12 @@ ip_frag_lookup(struct rte_ip_frag_tbl *tbl,
 			old = (old == NULL) ? (p2 + i) : old;
 	}
 
+    // zhou: first available slot for new key.
 	*free = empty;
+
+    // zhou: only return stale enties when NOT matched key.
 	*stale = old;
+
+    // zhou: there is no matched entry.
 	return NULL;
 }

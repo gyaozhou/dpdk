@@ -84,11 +84,14 @@ static struct flock wr_lock = {
 		.l_len = sizeof(early_mem_config.memsegs),
 };
 
+// zhou: few configuration related lcore and memory
 /* Address of global and public configuration */
 static struct rte_config rte_config = {
 		.mem_config = &early_mem_config,
 };
 
+// zhou: key data structure for CPU and thread, init by "rte_eal_cpu_init()"
+//       "RTE_MAX_LCORE" defined in compilation, 128 for x86_64-native-linuxapp-gcc.
 /* internal configuration (per-core) */
 struct lcore_config lcore_config[RTE_MAX_LCORE];
 
@@ -103,6 +106,22 @@ static char runtime_dir[PATH_MAX];
 
 static const char *default_runtime_dir = "/var/run";
 
+// zhou: by default, "/var/run/dpdk/rte/". In case more than one DPDK instance will
+//       run in same machine, specify "--file-prefix ". Then, "/var/run/dpdk/xxx".
+//       Multi-process:
+//       1. primary-secondary mode, they share the smme runtime dir to share memory
+//       configuration. In order to avoid error, correct "--proc-type" should assgined.
+//       2. two standalone process, they don't share any memory configuration, so they
+//       should be assgined "--file-prefix".
+//       3. In order to other process work as secondard process attach to this process,
+//       "--no-shconf" should be specified. Then "/var/run/dpdk/xxx/hugpe_info" will
+//       not created.
+//
+//       # ls /var/run/dpdk/xxx/
+//         config
+//         fbarray_memseg-2048k-0-1  fbarray_memseg-2048k-0-3  hugepage_info
+//         fbarray_memseg-2048k-0-0  fbarray_memseg-2048k-0-2  fbarray_memzone
+//         mp_socket
 int
 eal_create_runtime_dir(void)
 {
@@ -317,6 +336,7 @@ rte_eal_config_create(void)
 	if (internal_config.no_shconf)
 		return 0;
 
+    // zhou: ???
 	/* map the config before hugepage address so that we don't waste a page */
 	if (internal_config.base_virtaddr != 0)
 		rte_mem_cfg_addr = (void *)
@@ -465,6 +485,8 @@ rte_eal_config_reattach(void)
 	return 0;
 }
 
+// zhou: the process instance who is firstly create [runtime dir]/config, will
+//       be Primary instance, other will be the Secondary instance.
 /* Detect if we are a primary or a secondary process */
 enum rte_proc_type_t
 eal_proc_type_detect(void)
@@ -497,7 +519,9 @@ rte_config_init(void)
 	rte_config.process_type = internal_config.process_type;
 
 	switch (rte_config.process_type){
+
 	case RTE_PROC_PRIMARY:
+        // zhou: the content has not been filled.
 		if (rte_eal_config_create() < 0)
 			return -1;
 		eal_mcfg_update_from_internal();
@@ -718,6 +742,7 @@ eal_parse_args(int argc, char **argv)
 		}
 
 		ret = eal_parse_common_option(opt, optarg, &internal_config);
+
 		/* common parser is not happy */
 		if (ret < 0) {
 			eal_usage(prgname);
@@ -844,6 +869,8 @@ eal_parse_args(int argc, char **argv)
 		goto out;
 	}
 
+    // zhou: after parsing all arguments, use default method to confirm
+    //       other config.
 	if (eal_adjust_config(&internal_config) != 0) {
 		ret = -1;
 		goto out;
@@ -856,11 +883,13 @@ eal_parse_args(int argc, char **argv)
 		goto out;
 	}
 
+    // zhou: override "--".
 	if (optind >= 0)
 		argv[optind-1] = prgname;
 	ret = optind-1;
 
 out:
+    // zhou: critial in case of the CLI opt will be parsed again.
 	/* restore getopt lib */
 	optind = old_optind;
 	optopt = old_optopt;
@@ -955,6 +984,7 @@ is_iommu_enabled(void)
 	return n > 2;
 }
 
+// zhou: EAL fundmental components, including memory/EAL thread/PCI/cpu/...
 /* Launch threads, called at application init(). */
 int
 rte_eal_init(int argc, char **argv)
@@ -975,16 +1005,21 @@ rte_eal_init(int argc, char **argv)
 		return -1;
 	}
 
+    // zhou: make sure this intilization  function will be invoked only once.
 	if (!rte_atomic32_test_and_set(&run_once)) {
 		rte_eal_init_alert("already called initialization.");
 		rte_errno = EALREADY;
 		return -1;
 	}
 
+    // zhou: the application name, used for log identify.
 	p = strrchr(argv[0], '/');
 	strlcpy(logid, p ? p + 1 : argv[0], sizeof(logid));
+
 	thread_id = pthread_self();
 
+
+    // zhou: just reset internal config state.
 	eal_reset_internal_config(&internal_config);
 
 	/* set log level as early as possible */
@@ -1004,6 +1039,7 @@ rte_eal_init(int argc, char **argv)
 		return -1;
 	}
 
+    // zhou: external PMD drivers
 	if (eal_plugins_init() < 0) {
 		rte_eal_init_alert("Cannot init plugins");
 		rte_errno = EINVAL;
@@ -1011,17 +1047,22 @@ rte_eal_init(int argc, char **argv)
 		return -1;
 	}
 
+    // zhou: whitelist/blacklist/vdev
 	if (eal_option_device_parse()) {
 		rte_errno = ENODEV;
 		rte_atomic32_clear(&run_once);
 		return -1;
 	}
 
+    // zhou: mmap file "rte_config.mem_config", created by Primary instance or
+    //       detected by Secondary instance.
+    //       It will be filled in rte_eal_memzone_init().
 	if (rte_config_init() < 0) {
 		rte_eal_init_alert("Cannot init config");
 		return -1;
 	}
 
+    // zhou: "eal-intr-thread", create thread for interrupt handling
 	if (rte_eal_intr_init() < 0) {
 		rte_eal_init_alert("Cannot init interrupt-handling thread");
 		return -1;
@@ -1033,6 +1074,8 @@ rte_eal_init(int argc, char **argv)
 		return -1;
 	}
 
+
+    // zhou: "rte_mp_handle", create thread for inter-process communication.
 	/* Put mp channel init before bus scan so that we can init the vdev
 	 * bus through mp channel in the secondary process before the bus scan.
 	 */
@@ -1050,6 +1093,12 @@ rte_eal_init(int argc, char **argv)
 		return -1;
 	}
 
+
+
+    ////////////////////////////////////////////////////////////////////////////////
+
+    // zhou: scan all registered bus and all devices registered on each kind bus.
+    //       Just detect PCI device, not to bind with driver.
 	if (rte_bus_scan()) {
 		rte_eal_init_alert("Cannot scan the buses for devices");
 		rte_errno = ENODEV;
@@ -1059,6 +1108,9 @@ rte_eal_init(int argc, char **argv)
 
 	phys_addrs = rte_eal_using_phys_addrs() != 0;
 
+    // zhou: when PCI device binding with UIO, will use RTE_IOVA_PA;
+    //       when PCI device binding with VFIO, will use RTE_IOVA_VA.
+    //       How about when conflict with CLI argument?
 	/* if no EAL option "--iova-mode=<pa|va>", use bus IOVA scheme */
 	if (internal_config.iova_mode == RTE_IOVA_DC) {
 		/* autodetect the IOVA mapping mode */
@@ -1106,6 +1158,7 @@ rte_eal_init(int argc, char **argv)
 #endif
 		rte_eal_get_configuration()->iova_mode = iova_mode;
 	} else {
+
 		rte_eal_get_configuration()->iova_mode =
 			internal_config.iova_mode;
 	}
@@ -1119,11 +1172,14 @@ rte_eal_init(int argc, char **argv)
 	RTE_LOG(INFO, EAL, "Selected IOVA mode '%s'\n",
 		rte_eal_iova_mode() == RTE_IOVA_PA ? "PA" : "VA");
 
+
+    // zhou: once not specify "--no-huge", gather Hugepage info.
 	if (internal_config.no_hugetlbfs == 0) {
 		/* rte_config isn't initialized yet */
 		ret = internal_config.process_type == RTE_PROC_PRIMARY ?
 				eal_hugepage_info_init() :
 				eal_hugepage_info_read();
+
 		if (ret < 0) {
 			rte_eal_init_alert("Cannot get hugepage information.");
 			rte_errno = EACCES;
@@ -1132,6 +1188,7 @@ rte_eal_init(int argc, char **argv)
 		}
 	}
 
+    // zhou: used in dynamic memory mode, and --no-huge, we allocate each time.
 	if (internal_config.memory == 0 && internal_config.force_sockets == 0) {
 		if (internal_config.no_hugetlbfs)
 			internal_config.memory = MEMSIZE_IF_NO_HUGE_PAGE;
@@ -1155,7 +1212,10 @@ rte_eal_init(int argc, char **argv)
 		return -1;
 	}
 
+////////////////////////////////////////////////////////////////////////////////
+
 #ifdef VFIO_PRESENT
+    // zhou: README, setup VFIO
 	if (rte_eal_vfio_setup() < 0) {
 		rte_eal_init_alert("Cannot init VFIO");
 		rte_errno = EAGAIN;
@@ -1163,16 +1223,21 @@ rte_eal_init(int argc, char **argv)
 		return -1;
 	}
 #endif
+
+////////////////////////////////////////////////////////////////////////////////
+
 	/* in secondary processes, memory init may allocate additional fbarrays
 	 * not present in primary processes, so to avoid any potential issues,
 	 * initialize memzones first.
 	 */
+    // zhou: will fill "mem_config", README,
 	if (rte_eal_memzone_init() < 0) {
 		rte_eal_init_alert("Cannot init memzone");
 		rte_errno = ENODEV;
 		return -1;
 	}
 
+    // zhou: will fill "mem_config", README,
 	if (rte_eal_memory_init() < 0) {
 		rte_eal_init_alert("Cannot init memory");
 		rte_errno = ENOMEM;
@@ -1182,12 +1247,14 @@ rte_eal_init(int argc, char **argv)
 	/* the directories are locked during eal_hugepage_info_init */
 	eal_hugedirs_unlock();
 
+
 	if (rte_eal_malloc_heap_init() < 0) {
 		rte_eal_init_alert("Cannot init malloc heap");
 		rte_errno = ENODEV;
 		return -1;
 	}
 
+    // zhou: in order to manage tailqs in shared memory.
 	if (rte_eal_tailqs_init() < 0) {
 		rte_eal_init_alert("Cannot init tail queues for objects");
 		rte_errno = EFAULT;
@@ -1202,6 +1269,9 @@ rte_eal_init(int argc, char **argv)
 
 	eal_check_mem_on_local_socket();
 
+
+////////////////////////////////////////////////////////////////////////////////
+    // zhou: bind master lcore (current thread) with CPU set.
 	eal_thread_init_master(rte_config.master_lcore);
 
 	ret = eal_thread_dump_affinity(cpuset, sizeof(cpuset));
@@ -1210,6 +1280,7 @@ rte_eal_init(int argc, char **argv)
 		rte_config.master_lcore, (uintptr_t)thread_id, cpuset,
 		ret == 0 ? "" : "...");
 
+    // zhou: loop all slave lcore.
 	RTE_LCORE_FOREACH_SLAVE(i) {
 
 		/*
@@ -1223,6 +1294,7 @@ rte_eal_init(int argc, char **argv)
 
 		lcore_config[i].state = WAIT;
 
+        // zhou: "lcore-slave-%d", create thread
 		/* create a thread for each lcore */
 		ret = pthread_create(&lcore_config[i].thread_id, NULL,
 				     eal_thread_loop, NULL);
@@ -1239,11 +1311,17 @@ rte_eal_init(int argc, char **argv)
 				"Cannot set name for lcore thread\n");
 	}
 
+
+    // zhou: "sync_func()" just return 0, this is a method like cond-wait, sync state
+    //       of all threads, make sure they are init ready.
+    //       When sync_func() perform completed, the thread becomes to state "WAIT".
 	/*
 	 * Launch a dummy function on all slave lcores, so that master lcore
 	 * knows they are all ready when this function returns.
 	 */
 	rte_eal_mp_remote_launch(sync_func, NULL, SKIP_MASTER);
+
+    // zhou: all slave lcore completed executing "sync_func()"
 	rte_eal_mp_wait_lcore();
 
 	/* initialize services so vdevs register service during bus_probe. */
@@ -1254,6 +1332,8 @@ rte_eal_init(int argc, char **argv)
 		return -1;
 	}
 
+
+    // zhou: let driver to probe supported device.
 	/* Probe all the buses and devices/drivers on them */
 	if (rte_bus_probe()) {
 		rte_eal_init_alert("Cannot probe devices");
@@ -1266,6 +1346,9 @@ rte_eal_init(int argc, char **argv)
 	if (rte_vfio_is_enabled("vfio") && vfio_mp_sync_setup() < 0)
 		return -1;
 #endif
+
+
+    // zhou: service core
 
 	/* initialize default service/lcore mappings and start running. Ignore
 	 * -ENOTSUP, as it indicates no service coremask passed to EAL.
@@ -1324,6 +1407,7 @@ rte_eal_cleanup(void)
 	 */
 	if (rte_eal_process_type() == RTE_PROC_PRIMARY)
 		rte_memseg_walk(mark_freeable, NULL);
+
 	rte_service_finalize();
 	rte_mp_channel_cleanup();
 	eal_cleanup_config(&internal_config);

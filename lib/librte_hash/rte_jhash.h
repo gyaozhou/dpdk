@@ -276,6 +276,7 @@ rte_jhash_32b_2hashes(const uint32_t *k, uint32_t length, uint32_t *pc, uint32_t
  * @return
  *   Calculated hash value.
  */
+// zhou: hash function
 static inline uint32_t
 rte_jhash(const void *key, uint32_t length, uint32_t initval)
 {

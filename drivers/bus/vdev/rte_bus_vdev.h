@@ -19,7 +19,9 @@ extern "C" {
 #include <rte_dev.h>
 #include <rte_devargs.h>
 
+// zhou:
 struct rte_vdev_device {
+    // zhou: vdev by vdev
 	TAILQ_ENTRY(rte_vdev_device) next;      /**< Next attached vdev */
 	struct rte_device device;               /**< Inherit core device */
 };
@@ -66,6 +68,9 @@ typedef int (rte_vdev_remove_t)(struct rte_vdev_device *dev);
 /**
  * A virtual device driver abstraction.
  */
+// zhou: unlike PCI using vendor/device ID to identify which vdev could be drived
+//       this driver. vdev bus use name match to find suitable driver for detected
+//       vdev in vdev_probe_all_drivers().
 struct rte_vdev_driver {
 	TAILQ_ENTRY(rte_vdev_driver) next; /**< Next in list. */
 	struct rte_driver driver;      /**< Inherited general driver. */
@@ -91,12 +96,14 @@ void rte_vdev_register(struct rte_vdev_driver *driver);
  */
 void rte_vdev_unregister(struct rte_vdev_driver *driver);
 
+// zhou: init before main
 #define RTE_PMD_REGISTER_VDEV(nm, vdrv)\
 static const char *vdrvinit_ ## nm ## _alias;\
 RTE_INIT(vdrvinitfn_ ##vdrv)\
 {\
 	(vdrv).driver.name = RTE_STR(nm);\
 	(vdrv).driver.alias = vdrvinit_ ## nm ## _alias;\
+    // zhou: link to vdev list "vdev_driver_list"
 	rte_vdev_register(&vdrv);\
 } \
 RTE_PMD_EXPORT_NAME(nm, __COUNTER__)

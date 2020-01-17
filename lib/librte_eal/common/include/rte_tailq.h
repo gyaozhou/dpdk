@@ -19,16 +19,22 @@ extern "C" {
 #include <stdio.h>
 #include <rte_debug.h>
 
+// zhou: user allocated tailq should be represented by it.
 /** dummy structure type used by the rte_tailq APIs */
 struct rte_tailq_entry {
 	TAILQ_ENTRY(rte_tailq_entry) next; /**< Pointer entries for a tailq list */
+    // zhou: pointer to "rte_ring" for example.
 	void *data; /**< Pointer to the data referenced by this tailq entry */
 };
+
+// zhou: each library defined tailq should be same with "rte_tailq_entry_head"
+//       with different type name.
 /** dummy */
 TAILQ_HEAD(rte_tailq_entry_head, rte_tailq_entry);
 
 #define RTE_TAILQ_NAMESIZE 32
 
+// zhou: store in shared memory, refer to description below.
 /**
  * The structure defining a tailq header entry for storing
  * in the rte_config structure in shared memory. Each tailq
@@ -38,17 +44,28 @@ TAILQ_HEAD(rte_tailq_entry_head, rte_tailq_entry);
  * a multi-process app to find already-created elements in shared memory.
  */
 struct rte_tailq_head {
+    // zhou: head of this kind tailq, used to link user allocate tailq.
 	struct rte_tailq_entry_head tailq_head; /**< NOTE: must be first element */
+
+    // zhou: same name as "rte_tailq_elem.name", used as key.
 	char name[RTE_TAILQ_NAMESIZE];
 };
 
+// zhou: refer to each library defined TAILQ, will be linked in
+//       "struct rte_tailq_elem_head{}".
 struct rte_tailq_elem {
 	/**
 	 * Reference to head in shared mem, updated at init time by
 	 * rte_eal_tailqs_init()
 	 */
+    // zhou: pointer to one element of rte_mem_config.tailq_head[] in
+    //       shared memory
 	struct rte_tailq_head *head;
+
+    // zhou: used to link in "struct rte_tailq_elem_head{}"
 	TAILQ_ENTRY(rte_tailq_elem) next;
+
+    // zhou: name of this kind tailq.
 	const char name[RTE_TAILQ_NAMESIZE];
 };
 
@@ -118,6 +135,7 @@ struct rte_tailq_head *rte_eal_tailq_lookup(const char *name);
  */
 int rte_eal_tailq_register(struct rte_tailq_elem *t);
 
+// zhou: define a function, make sure will be invoked before main().
 #define EAL_REGISTER_TAILQ(t) \
 RTE_INIT(tailqinitfn_ ##t) \
 { \

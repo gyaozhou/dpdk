@@ -266,6 +266,7 @@ ipv4_hdr_cksum(struct rte_ipv4_hdr *ip_h)
 #define is_multicast_ipv4_addr(ipv4_addr) \
 	(((rte_be_to_cpu_32((ipv4_addr)) >> 24) & 0x000000FF) == 0xE0)
 
+// zhou:
 /*
  * Receive a burst of packets, lookup for ICMP echo requests, and, if any,
  * send back ICMP echo replies.

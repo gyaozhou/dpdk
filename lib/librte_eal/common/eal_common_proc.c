@@ -575,6 +575,7 @@ close_socket_fd(void)
 	unlink(path);
 }
 
+// zhou: thread dedicated for inter-process communication.
 int
 rte_mp_channel_init(void)
 {

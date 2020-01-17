@@ -34,6 +34,7 @@ struct conn {
 	conn_msg_handle_t msg_handle;
 };
 
+// zhou: socket based TCP server which used to handle commands from remote node.
 struct conn *
 conn_init(struct conn_params *p)
 {

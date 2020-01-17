@@ -10,14 +10,17 @@
 int
 rte_cpu_is_supported(void)
 {
+    // zhou: how many CPU flags, which DPDK depends on.
 	/* This is generated at compile-time by the build system */
 	static const enum rte_cpu_flag_t compile_time_flags[] = {
 			RTE_COMPILE_TIME_CPUFLAGS
 	};
+
 	unsigned count = RTE_DIM(compile_time_flags), i;
 	int ret;
 
 	for (i = 0; i < count; i++) {
+        // zhou: check whether needed CPU flags were provided by running CPU.
 		ret = rte_cpu_get_flag_enabled(compile_time_flags[i]);
 
 		if (ret < 0) {

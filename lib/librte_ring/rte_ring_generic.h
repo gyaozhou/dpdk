@@ -14,6 +14,7 @@ static __rte_always_inline void
 update_tail(struct rte_ring_headtail *ht, uint32_t old_val, uint32_t new_val,
 		uint32_t single, uint32_t enqueue)
 {
+    // zhou: without C11, have to use CPU ARCH specific code.
 	if (enqueue)
 		rte_smp_wmb();
 	else

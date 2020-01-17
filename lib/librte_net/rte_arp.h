@@ -32,11 +32,15 @@ struct rte_arp_ipv4 {
  * ARP header.
  */
 struct rte_arp_hdr {
+    // zhou: Ethernet or other L2 Protocol
 	uint16_t arp_hardware;    /* format of hardware address */
 #define RTE_ARP_HRD_ETHER     1  /* ARP Ethernet address format */
 
+    // zhou: IPv4 or IPv6
 	uint16_t arp_protocol;    /* format of protocol address */
+    // zhou: sizeof L2 address
 	uint8_t  arp_hlen;    /* length of hardware address */
+    // zhou: sizeof L3 address
 	uint8_t  arp_plen;    /* length of protocol address */
 	uint16_t arp_opcode;     /* ARP opcode (command) */
 #define	RTE_ARP_OP_REQUEST    1 /* request to resolve address */

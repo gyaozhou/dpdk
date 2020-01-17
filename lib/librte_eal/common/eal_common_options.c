@@ -115,17 +115,23 @@ TAILQ_HEAD(device_option_list, device_option);
 struct device_option {
 	TAILQ_ENTRY(device_option) next;
 
+    // zhou: blacklist/whitelist/virtual
 	enum rte_devtype type;
+
 	char arg[];
 };
 
+// zhou: white/black/vdev
 static struct device_option_list devopt_list =
 TAILQ_HEAD_INITIALIZER(devopt_list);
 
+// zhou: "master-lcore" not specified in cli.
 static int master_lcore_parsed;
 static int mem_parsed;
+// zhou: no lcore argument specified in cli.
 static int core_parsed;
 
+// zhou: "blacklist" or "whitelist" or "vdev" up to different mode.
 static int
 eal_option_device_add(enum rte_devtype type, const char *optarg)
 {
@@ -160,7 +166,7 @@ eal_option_device_parse(void)
 
 	TAILQ_FOREACH_SAFE(devopt, &devopt_list, next, tmp) {
 		if (ret == 0) {
-			ret = rte_devargs_add(devopt->type, devopt->arg);
+			ret =  rte_devargs_add(devopt->type, devopt->arg);
 			if (ret)
 				RTE_LOG(ERR, EAL, "Unable to parse device '%s'\n",
 					devopt->arg);
@@ -223,6 +229,8 @@ eal_reset_internal_config(struct internal_config *internal_cfg)
 	internal_cfg->init_complete = 0;
 }
 
+// zhou: DPDK provide many NIC PMD driver already. It still allows user to use their
+//       own PMD driver has not been included in DPDK.
 static int
 eal_plugin_add(const char *path)
 {
@@ -234,7 +242,9 @@ eal_plugin_add(const char *path)
 		return -1;
 	}
 	memset(solib, 0, sizeof(*solib));
+
 	strlcpy(solib->name, path, PATH_MAX-1);
+
 	solib->name[PATH_MAX-1] = 0;
 	TAILQ_INSERT_TAIL(&solib_list, solib, next);
 
@@ -275,6 +285,8 @@ eal_plugindir_init(const char *path)
 	return (dent == NULL) ? 0 : -1;
 }
 
+// zhou: README, once DPDK doesn't includes the driver we need, we can
+//       use by third party in this way.
 int
 eal_plugins_init(void)
 {
@@ -413,6 +425,7 @@ eal_service_cores_parsed(void)
 {
 	int idx;
 	for (idx = 0; idx < RTE_MAX_LCORE; idx++) {
+        // zhou: checking any vCore has been assigned to Service Core.
 		if (lcore_config[idx].core_role == ROLE_SERVICE)
 			return 1;
 	}
@@ -463,14 +476,20 @@ eal_parse_coremask(const char *coremask, int *cores)
 	 */
 	while (isblank(*coremask))
 		coremask++;
+
+    // zhou: "0x" or "0X" is optional.
 	if (coremask[0] == '0' && ((coremask[1] == 'x')
 		|| (coremask[1] == 'X')))
 		coremask += 2;
+
 	i = strlen(coremask);
+
+    // zhou: check blank in tail.
 	while ((i > 0) && isblank(coremask[i - 1]))
 		i--;
 	if (i == 0)
 		return -1;
+
 
 	for (i = i - 1; i >= 0 && idx < RTE_MAX_LCORE; i--) {
 		c = coremask[i];
@@ -478,6 +497,7 @@ eal_parse_coremask(const char *coremask, int *cores)
 			/* invalid characters */
 			return -1;
 		}
+
 		val = xdigit2val(c);
 		for (j = 0; j < BITS_PER_HEX && idx < RTE_MAX_LCORE; j++, idx++)
 		{
@@ -487,9 +507,11 @@ eal_parse_coremask(const char *coremask, int *cores)
 			}
 		}
 	}
+
 	for (; i >= 0; i--)
 		if (coremask[i] != '0')
 			return -1;
+
 	if (count == 0)
 		return -1;
 	return 0;
@@ -637,6 +659,7 @@ eal_parse_master_lcore(const char *arg)
 		return -1;
 	if (cfg->master_lcore >= RTE_MAX_LCORE)
 		return -1;
+
 	master_lcore_parsed = 1;
 
 	/* ensure master core is not used as service core */
@@ -811,6 +834,7 @@ convert_to_cpuset(rte_cpuset_t *cpusetp,
  *   lcore 7 runs on cpuset 0x80 (cpu 7)
  *   lcore 8 runs on cpuset 0x100 (cpu 8)
  */
+// zhou: coremap
 static int
 eal_parse_lcores(const char *lcores)
 {
@@ -897,6 +921,9 @@ eal_parse_lcores(const char *lcores)
 		    0 > convert_to_cpuset(&cpuset, set, RTE_DIM(set)))
 			goto err;
 
+
+        // zhou:
+
 		/* start to update lcore_set */
 		for (idx = 0; idx < RTE_MAX_LCORE; idx++) {
 			if (!set[idx])
@@ -908,10 +935,12 @@ eal_parse_lcores(const char *lcores)
 				count++;
 			}
 
+            // zhou: in case of <number>-<number>, which lcore 1:1 vCore
 			if (lflags) {
 				CPU_ZERO(&cpuset);
 				CPU_SET(idx, &cpuset);
 			}
+
 			rte_memcpy(&lcore_config[idx].cpuset, &cpuset,
 				   sizeof(rte_cpuset_t));
 		}
@@ -1203,26 +1232,35 @@ eal_parse_common_option(int opt, const char *optarg,
 	static int w_used;
 
 	switch (opt) {
+
+    // zhou: all other devices, which is binding with "igb_uio", "uio_pci_generic",
+    //       "vfio-pci" could be used.
+    //       It's user's responsibility to modprob kernel module, and binding device.
 	/* blacklist */
 	case 'b':
 		if (w_used)
 			goto bw_used;
+
 		if (eal_option_device_add(RTE_DEVTYPE_BLACKLISTED_PCI,
 				optarg) < 0) {
 			return -1;
 		}
 		b_used = 1;
 		break;
+
+    // zhou: whitelist used to assign PCI device ownership to this EAL instance.
 	/* whitelist */
 	case 'w':
 		if (b_used)
 			goto bw_used;
+
 		if (eal_option_device_add(RTE_DEVTYPE_WHITELISTED_PCI,
 				optarg) < 0) {
 			return -1;
 		}
 		w_used = 1;
 		break;
+
 	/* coremask */
 	case 'c': {
 		int lcore_indexes[RTE_MAX_LCORE];
@@ -1249,6 +1287,7 @@ eal_parse_common_option(int opt, const char *optarg,
 				(core_parsed == LCORE_OPT_LST) ? "-l" :
 				(core_parsed == LCORE_OPT_MAP) ? "--lcore" :
 				"-c");
+            // zhou: process abort.
 			return -1;
 		}
 
@@ -1295,6 +1334,8 @@ eal_parse_common_option(int opt, const char *optarg,
 			return -1;
 		}
 		break;
+
+        // zhou: not list in eal_common_usage().
 	/* service corelist */
 	case 'S':
 		if (eal_parse_service_corelist(optarg) < 0) {
@@ -1302,6 +1343,7 @@ eal_parse_common_option(int opt, const char *optarg,
 			return -1;
 		}
 		break;
+
 	/* size of memory */
 	case 'm':
 		conf->memory = atoi(optarg);
@@ -1326,6 +1368,9 @@ eal_parse_common_option(int opt, const char *optarg,
 			return -1;
 		}
 		break;
+
+        // zhou: when need to load external driver in such way?
+        //       The driver must in form of *.so
 	/* force loading of external driver */
 	case 'd':
 		if (eal_plugin_add(optarg) == -1)
@@ -1344,6 +1389,7 @@ eal_parse_common_option(int opt, const char *optarg,
 		conf->hugepage_unlink = 1;
 		break;
 
+        // zhou: "no-huge" specified by user.
 	case OPT_NO_HUGE_NUM:
 		conf->no_hugetlbfs = 1;
 		/* no-huge is legacy mem */
@@ -1409,6 +1455,10 @@ eal_parse_common_option(int opt, const char *optarg,
 		}
 		break;
 	}
+
+    // zhou: "--lcores COREMAP", when using "-c COREMASK" or "-l CORELIST",
+    //       the lcore and CPU core mapping is sequential. By this argument,
+    //       user can specify the mapping.
 	case OPT_LCORES_NUM:
 		if (eal_parse_lcores(optarg) < 0) {
 			RTE_LOG(ERR, EAL, "invalid parameter for --"
@@ -1416,6 +1466,8 @@ eal_parse_common_option(int opt, const char *optarg,
 			return -1;
 		}
 
+        // zhou: only one of "--lcores COREMAP" "-c COREMASK"  "-l CORELIST"
+        //       could be used.
 		if (core_parsed) {
 			RTE_LOG(ERR, EAL, "Option --lcore is ignored, because (%s) is set!\n",
 				(core_parsed == LCORE_OPT_LST) ? "-l" :
@@ -1522,6 +1574,8 @@ eal_cleanup_config(struct internal_config *internal_cfg)
 	return 0;
 }
 
+
+// zhou: invoked after parsing arguments.
 int
 eal_adjust_config(struct internal_config *internal_cfg)
 {
@@ -1534,6 +1588,7 @@ eal_adjust_config(struct internal_config *internal_cfg)
 	if (internal_config.process_type == RTE_PROC_AUTO)
 		internal_config.process_type = eal_proc_type_detect();
 
+    // zhou: master lcore default value is the first one.
 	/* default master lcore is the first one */
 	if (!master_lcore_parsed) {
 		cfg->master_lcore = rte_get_next_lcore(-1, 0, 0);

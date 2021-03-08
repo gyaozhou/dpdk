@@ -15,7 +15,6 @@ There is no change to PMD API. The RX/TX handler are the only two entries for vP
 They are transparently registered at runtime RX/TX execution if all condition checks pass.
 
 1.  To date, only an SSE version of IX GBE vPMD is available.
-    To ensure that vPMD is in the binary code, ensure that the option CONFIG_RTE_IXGBE_INC_VECTOR=y is in the configure file.
 
 Some constraints apply as pre-conditions for specific optimizations on bulk packet transfers.
 The following sections explain RX and TX constraints in the vPMD.
@@ -90,7 +89,7 @@ be passed as part of EAL arguments. For example,
 
 .. code-block:: console
 
-   testpmd -w af:10.0,pflink_fullchk=1 -- -i
+   dpdk-testpmd -a af:10.0,pflink_fullchk=1 -- -i
 
 - ``pflink_fullchk`` (default **0**)
 
@@ -253,6 +252,21 @@ Before binding ``vfio`` with legacy mode in X550 NICs, use ``modprobe vfio ``
 ``nointxmask=1`` to load ``vfio`` module if the intx is not shared with other
 devices.
 
+RSS isn't supported when QinQ is enabled
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Due to FW limitation, IXGBE doesn't support RSS when QinQ is enabled currently.
+
+UDP with zero checksum is reported as error
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Intel 82599 10 Gigabit Ethernet Controller Specification Update (Revision 2.87)
+Errata: 44 Integrity Error Reported for IPv4/UDP Packets With Zero Checksum
+
+To support UDP zero checksum, the zero and bad UDP checksum packet is marked as
+PKT_RX_L4_CKSUM_UNKNOWN, so the application needs to recompute the checksum to
+validate it.
+
 Inline crypto processing support
 --------------------------------
 
@@ -278,7 +292,7 @@ option ``representor`` the user can specify which virtual functions to create
 port representors for on initialization of the PF PMD by passing the VF IDs of
 the VFs which are required.::
 
-  -w DBDF,representor=[0,1,4]
+  -a DBDF,representor=[0,1,4]
 
 Currently hot-plugging of representor ports is not supported so all required
 representors must be specified on the creation of the PF.

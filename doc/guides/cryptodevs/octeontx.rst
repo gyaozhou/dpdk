@@ -59,14 +59,6 @@ Supported Asymmetric Crypto Algorithms
 * ``RTE_CRYPTO_ASYM_XFORM_RSA``
 * ``RTE_CRYPTO_ASYM_XFORM_MODEX``
 
-Config flags
-------------
-
-For compiling the OCTEON TX crypto poll mode driver, please check if the
-CONFIG_RTE_LIBRTE_PMD_OCTEONTX_CRYPTO setting is set to `y` in
-config/common_base file.
-
-* ``CONFIG_RTE_LIBRTE_PMD_OCTEONTX_CRYPTO=y``
 
 Compilation
 -----------
@@ -115,9 +107,7 @@ applications.
 
 .. code-block:: console
 
-        echo 8 > /sys/kernel/mm/hugepages/hugepages-524288kB/nr_hugepages
-        mkdir /mnt/huge
-        mount -t hugetlbfs nodev /mnt/huge
+   dpdk-hugepages.py --setup 4G --pagesize 512M
 
 Example applications can now be executed with crypto operations offloaded to
 OCTEON TX crypto PMD.
@@ -135,7 +125,7 @@ application:
 
 .. code-block:: console
 
-        ./test
+        ./dpdk-test
         RTE>>cryptodev_octeontx_autotest
 
 The asymmetric crypto operations on OCTEON TX crypto PMD may be verified by running the test
@@ -143,5 +133,5 @@ application:
 
 .. code-block:: console
 
-        ./test
+        ./dpdk-test
         RTE>>cryptodev_octeontx_asym_autotest

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017,2019 NXP
+ *   Copyright 2017,2019-2021 NXP
  *
  */
 
@@ -26,7 +26,7 @@
 #include <rte_eal.h>
 #include <rte_alarm.h>
 #include <rte_ether.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_malloc.h>
 #include <rte_ring.h>
 #include <rte_ip.h>
@@ -58,29 +58,57 @@
 		(_fd)->bpid = _bpid; \
 	} while (0)
 
-#if (defined RTE_LIBRTE_DPAA_DEBUG_DRIVER)
-static void dpaa_display_frame(const struct qm_fd *fd)
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+#define DISPLAY_PRINT printf
+static void dpaa_display_frame_info(const struct qm_fd *fd,
+			uint32_t fqid, bool rx)
 {
 	int ii;
 	char *ptr;
+	struct annotations_t *annot = rte_dpaa_mem_ptov(fd->addr);
+	uint8_t format;
 
-	printf("%s::bpid %x addr %08x%08x, format %d off %d, len %d stat %x\n",
-	       __func__, fd->bpid, fd->addr_hi, fd->addr_lo, fd->format,
-		fd->offset, fd->length20, fd->status);
-
-	ptr = (char *)rte_dpaa_mem_ptov(fd->addr);
-	ptr += fd->offset;
-	printf("%02x ", *ptr);
-	for (ii = 1; ii < fd->length20; ii++) {
-		printf("%02x ", *ptr);
-		if ((ii % 16) == 0)
-			printf("\n");
-		ptr++;
+	if (!fd->status) {
+		/* Do not display correct packets.*/
+		return;
 	}
-	printf("\n");
+
+	format = (fd->opaque & DPAA_FD_FORMAT_MASK) >>
+				DPAA_FD_FORMAT_SHIFT;
+
+	DISPLAY_PRINT("fqid %d bpid %d addr 0x%lx, format %d\r\n",
+		      fqid, fd->bpid, (unsigned long)fd->addr, fd->format);
+	DISPLAY_PRINT("off %d, len %d stat 0x%x\r\n",
+		      fd->offset, fd->length20, fd->status);
+	if (rx) {
+		ptr = (char *)&annot->parse;
+		DISPLAY_PRINT("RX parser result:\r\n");
+		for (ii = 0; ii < (int)sizeof(struct dpaa_eth_parse_results_t);
+			ii++) {
+			DISPLAY_PRINT("%02x ", ptr[ii]);
+			if (((ii + 1) % 16) == 0)
+				DISPLAY_PRINT("\n");
+		}
+		DISPLAY_PRINT("\n");
+	}
+
+	if (unlikely(format == qm_fd_sg)) {
+		/*TBD:S/G display: to be implemented*/
+		return;
+	}
+
+	DISPLAY_PRINT("Frame payload:\r\n");
+	ptr = (char *)annot;
+	ptr += fd->offset;
+	for (ii = 0; ii < fd->length20; ii++) {
+		DISPLAY_PRINT("%02x ", ptr[ii]);
+		if (((ii + 1) % 16) == 0)
+			printf("\n");
+	}
+	DISPLAY_PRINT("\n");
 }
 #else
-#define dpaa_display_frame(a)
+#define dpaa_display_frame_info(a, b, c)
 #endif
 
 static inline void dpaa_slow_parsing(struct rte_mbuf *m __rte_unused,
@@ -96,6 +124,9 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m, void *fd_virt_addr)
 	uint64_t prs = *((uintptr_t *)(&annot->parse)) & DPAA_PARSE_MASK;
 
 	DPAA_DP_LOG(DEBUG, " Parsing mbuf: %p with annotations: %p", m, annot);
+
+	m->ol_flags = PKT_RX_RSS_HASH | PKT_RX_IP_CKSUM_GOOD |
+		PKT_RX_L4_CKSUM_GOOD;
 
 	switch (prs) {
 	case DPAA_PKT_TYPE_IPV4:
@@ -171,6 +202,16 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m, void *fd_virt_addr)
 		m->packet_type = RTE_PTYPE_L2_ETHER |
 			RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_SCTP;
 		break;
+	case DPAA_PKT_TYPE_IPV4_CSUM_ERR:
+	case DPAA_PKT_TYPE_IPV6_CSUM_ERR:
+		m->ol_flags = PKT_RX_RSS_HASH | PKT_RX_IP_CKSUM_BAD;
+		break;
+	case DPAA_PKT_TYPE_IPV4_TCP_CSUM_ERR:
+	case DPAA_PKT_TYPE_IPV6_TCP_CSUM_ERR:
+	case DPAA_PKT_TYPE_IPV4_UDP_CSUM_ERR:
+	case DPAA_PKT_TYPE_IPV6_UDP_CSUM_ERR:
+		m->ol_flags = PKT_RX_RSS_HASH | PKT_RX_L4_CKSUM_BAD;
+		break;
 	case DPAA_PKT_TYPE_NONE:
 		m->packet_type = 0;
 		break;
@@ -185,10 +226,6 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m, void *fd_virt_addr)
 
 	/* Set the hash values */
 	m->hash.rss = (uint32_t)(annot->hash);
-	/* All packets with Bad checksum are dropped by interface (and
-	 * corresponding notification issued to RX error queues).
-	 */
-	m->ol_flags = PKT_RX_RSS_HASH | PKT_RX_IP_CKSUM_GOOD;
 
 	/* Check if Vlan is present */
 	if (prs & DPAA_PARSE_VLAN_MASK)
@@ -297,7 +334,7 @@ dpaa_unsegmented_checksum(struct rte_mbuf *mbuf, struct qm_fd *fd_arr)
 	}
 }
 
-struct rte_mbuf *
+static struct rte_mbuf *
 dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 {
 	struct dpaa_bp_info *bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
@@ -305,7 +342,7 @@ dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	struct qm_sg_entry *sgt, *sg_temp;
 	void *vaddr, *sg_vaddr;
 	int i = 0;
-	uint8_t fd_offset = fd->offset;
+	uint16_t fd_offset = fd->offset;
 
 	vaddr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
 	if (!vaddr) {
@@ -377,7 +414,6 @@ dpaa_eth_fd_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	DPAA_DP_LOG(DEBUG, " FD--->MBUF off %d len = %d", offset, length);
 
 	/* Ignoring case when format != qm_fd_contig */
-	dpaa_display_frame(fd);
 	ptr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
 
 	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
@@ -396,6 +432,69 @@ dpaa_eth_fd_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	dpaa_eth_packet_info(mbuf, mbuf->buf_addr);
 
 	return mbuf;
+}
+
+uint16_t
+dpaa_free_mbuf(const struct qm_fd *fd)
+{
+	struct rte_mbuf *mbuf;
+	struct dpaa_bp_info *bp_info;
+	uint8_t format;
+	void *ptr;
+
+	bp_info = DPAA_BPID_TO_POOL_INFO(fd->bpid);
+	format = (fd->opaque & DPAA_FD_FORMAT_MASK) >> DPAA_FD_FORMAT_SHIFT;
+	if (unlikely(format == qm_fd_sg)) {
+		struct rte_mbuf *first_seg, *prev_seg, *cur_seg, *temp;
+		struct qm_sg_entry *sgt, *sg_temp;
+		void *vaddr, *sg_vaddr;
+		int i = 0;
+		uint16_t fd_offset = fd->offset;
+
+		vaddr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
+		if (!vaddr) {
+			DPAA_PMD_ERR("unable to convert physical address");
+			return -1;
+		}
+		sgt = vaddr + fd_offset;
+		sg_temp = &sgt[i++];
+		hw_sg_to_cpu(sg_temp);
+		temp = (struct rte_mbuf *)
+			((char *)vaddr - bp_info->meta_data_size);
+		sg_vaddr = DPAA_MEMPOOL_PTOV(bp_info,
+						qm_sg_entry_get64(sg_temp));
+
+		first_seg = (struct rte_mbuf *)((char *)sg_vaddr -
+						bp_info->meta_data_size);
+		first_seg->nb_segs = 1;
+		prev_seg = first_seg;
+		while (i < DPAA_SGT_MAX_ENTRIES) {
+			sg_temp = &sgt[i++];
+			hw_sg_to_cpu(sg_temp);
+			sg_vaddr = DPAA_MEMPOOL_PTOV(bp_info,
+						qm_sg_entry_get64(sg_temp));
+			cur_seg = (struct rte_mbuf *)((char *)sg_vaddr -
+						      bp_info->meta_data_size);
+			first_seg->nb_segs += 1;
+			prev_seg->next = cur_seg;
+			if (sg_temp->final) {
+				cur_seg->next = NULL;
+				break;
+			}
+			prev_seg = cur_seg;
+		}
+
+		rte_pktmbuf_free_seg(temp);
+		rte_pktmbuf_free_seg(first_seg);
+		return 0;
+	}
+
+	ptr = DPAA_MEMPOOL_PTOV(bp_info, qm_fd_addr(fd));
+	mbuf = (struct rte_mbuf *)((char *)ptr - bp_info->meta_data_size);
+
+	rte_pktmbuf_free(mbuf);
+
+	return 0;
 }
 
 /* Specific for LS1043 */
@@ -429,7 +528,6 @@ dpaa_rx_cb_no_prefetch(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 
 		fd = &dqrr[i]->fd;
 		dpaa_intf = fq[0]->dpaa_intf;
-
 		format = (fd->opaque & DPAA_FD_FORMAT_MASK) >>
 				DPAA_FD_FORMAT_SHIFT;
 		if (unlikely(format == qm_fd_sg)) {
@@ -452,6 +550,7 @@ dpaa_rx_cb_no_prefetch(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 		mbuf->next = NULL;
 		rte_mbuf_refcnt_set(mbuf, 1);
 		dpaa_eth_packet_info(mbuf, mbuf->buf_addr);
+		dpaa_display_frame_info(fd, fq[0]->fqid, true);
 	}
 }
 
@@ -469,7 +568,6 @@ dpaa_rx_cb(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 	for (i = 0; i < num_bufs; i++) {
 		fd = &dqrr[i]->fd;
 		dpaa_intf = fq[0]->dpaa_intf;
-
 		format = (fd->opaque & DPAA_FD_FORMAT_MASK) >>
 				DPAA_FD_FORMAT_SHIFT;
 		if (unlikely(format == qm_fd_sg)) {
@@ -492,6 +590,7 @@ dpaa_rx_cb(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 		mbuf->next = NULL;
 		rte_mbuf_refcnt_set(mbuf, 1);
 		dpaa_eth_packet_info(mbuf, mbuf->buf_addr);
+		dpaa_display_frame_info(fd, fq[0]->fqid, true);
 	}
 }
 
@@ -550,7 +649,7 @@ dpaa_rx_cb_parallel(void *event,
 	ev->queue_id = fq->ev.queue_id;
 	ev->priority = fq->ev.priority;
 	ev->impl_opaque = (uint8_t)DPAA_INVALID_MBUF_SEQN;
-	mbuf->seqn = DPAA_INVALID_MBUF_SEQN;
+	*dpaa_seqn(mbuf) = DPAA_INVALID_MBUF_SEQN;
 	*bufs = mbuf;
 
 	return qman_cb_dqrr_consume;
@@ -584,11 +683,55 @@ dpaa_rx_cb_atomic(void *event,
 	DPAA_PER_LCORE_DQRR_HELD |= 1 << index;
 	DPAA_PER_LCORE_DQRR_MBUF(index) = mbuf;
 	ev->impl_opaque = index + 1;
-	mbuf->seqn = (uint32_t)index + 1;
+	*dpaa_seqn(mbuf) = (uint32_t)index + 1;
 	*bufs = mbuf;
 
 	return qman_cb_dqrr_defer;
 }
+
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+static inline void dpaa_eth_err_queue(struct dpaa_if *dpaa_intf)
+{
+	struct rte_mbuf *mbuf;
+	struct qman_fq *debug_fq;
+	int ret, i;
+	struct qm_dqrr_entry *dq;
+	struct qm_fd *fd;
+
+	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+		ret = rte_dpaa_portal_init((void *)0);
+		if (ret) {
+			DPAA_PMD_ERR("Failure in affining portal");
+			return;
+		}
+	}
+	for (i = 0; i <= DPAA_DEBUG_FQ_TX_ERROR; i++) {
+		debug_fq = &dpaa_intf->debug_queues[i];
+		ret = qman_set_vdq(debug_fq, 4, QM_VDQCR_EXACT);
+		if (ret)
+			return;
+
+		do {
+			dq = qman_dequeue(debug_fq);
+			if (!dq)
+				continue;
+			fd = &dq->fd;
+			if (i == DPAA_DEBUG_FQ_RX_ERROR)
+				DPAA_PMD_ERR("RX ERROR status: 0x%08x",
+					fd->status);
+			else
+				DPAA_PMD_ERR("TX ERROR status: 0x%08x",
+					fd->status);
+			dpaa_display_frame_info(fd, debug_fq->fqid,
+				i == DPAA_DEBUG_FQ_RX_ERROR);
+
+			mbuf = dpaa_eth_fd_to_mbuf(fd, dpaa_intf->ifid);
+			rte_pktmbuf_free(mbuf);
+			qman_dqrr_consume(debug_fq, dq);
+		} while (debug_fq->flags & QMAN_FQ_STATE_VDQCR);
+	}
+}
+#endif
 
 uint16_t dpaa_eth_queue_rx(void *q,
 			   struct rte_mbuf **bufs,
@@ -604,10 +747,15 @@ uint16_t dpaa_eth_queue_rx(void *q,
 				rte_eal_process_type() == RTE_PROC_SECONDARY))
 		rte_dpaa_bpid_info = fq->bp_array;
 
+#ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
+	if (fq->fqid == ((struct dpaa_if *)fq->dpaa_intf)->rx_queues[0].fqid)
+		dpaa_eth_err_queue((struct dpaa_if *)fq->dpaa_intf);
+#endif
+
 	if (likely(fq->is_static))
 		return dpaa_eth_queue_portal_rx(fq, bufs, nb_bufs);
 
-	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
 		if (ret) {
 			DPAA_PMD_ERR("Failure in affining portal");
@@ -636,19 +784,19 @@ uint16_t dpaa_eth_queue_rx(void *q,
 		if (!dq)
 			continue;
 		bufs[num_rx++] = dpaa_eth_fd_to_mbuf(&dq->fd, ifid);
+		dpaa_display_frame_info(&dq->fd, fq->fqid, true);
 		qman_dqrr_consume(fq, dq);
 	} while (fq->flags & QMAN_FQ_STATE_VDQCR);
 
 	return num_rx;
 }
 
-int
+static int
 dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 		struct qm_fd *fd,
-		uint32_t bpid)
+		struct dpaa_bp_info *bp_info)
 {
 	struct rte_mbuf *cur_seg = mbuf, *prev_seg = NULL;
-	struct dpaa_bp_info *bp_info = DPAA_BPID_TO_POOL_INFO(bpid);
 	struct rte_mbuf *temp, *mi;
 	struct qm_sg_entry *sg_temp, *sgt;
 	int i = 0;
@@ -691,7 +839,7 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	fd->format = QM_FD_SG;
 	fd->addr = temp->buf_iova;
 	fd->offset = temp->data_off;
-	fd->bpid = bpid;
+	fd->bpid = bp_info ? bp_info->bpid : 0xff;
 	fd->length20 = mbuf->pkt_len;
 
 	while (i < DPAA_SGT_MAX_ENTRIES) {
@@ -712,6 +860,9 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 				sg_temp->bpid =
 					DPAA_MEMPOOL_TO_BPID(cur_seg->pool);
 			}
+			cur_seg = cur_seg->next;
+		} else if (RTE_MBUF_HAS_EXTBUF(cur_seg)) {
+			sg_temp->bpid = 0xff;
 			cur_seg = cur_seg->next;
 		} else {
 			/* Get owner MBUF from indirect buffer */
@@ -762,6 +913,9 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			 */
 			DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info->bpid);
 		}
+	} else if (RTE_MBUF_HAS_EXTBUF(mbuf)) {
+		DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr,
+				bp_info ? bp_info->bpid : 0xff);
 	} else {
 		/* This is data-containing core mbuf: 'mi' */
 		mi = rte_mbuf_from_indirect(mbuf);
@@ -780,7 +934,8 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			 * been released by BMAN.
 			 */
 			rte_mbuf_refcnt_update(mi, 1);
-			DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info->bpid);
+			DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr,
+						bp_info ? bp_info->bpid : 0xff);
 		}
 		rte_pktmbuf_free(mbuf);
 	}
@@ -802,7 +957,7 @@ tx_on_dpaa_pool(struct rte_mbuf *mbuf,
 		tx_on_dpaa_pool_unsegmented(mbuf, bp_info, fd_arr);
 	} else if (mbuf->nb_segs > 1 &&
 		   mbuf->nb_segs <= DPAA_SGT_MAX_ENTRIES) {
-		if (dpaa_eth_mbuf_to_sg_fd(mbuf, fd_arr, bp_info->bpid)) {
+		if (dpaa_eth_mbuf_to_sg_fd(mbuf, fd_arr, bp_info)) {
 			DPAA_PMD_DEBUG("Unable to create Scatter Gather FD");
 			return 1;
 		}
@@ -906,8 +1061,9 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	uint16_t state;
 	int ret, realloc_mbuf = 0;
 	uint32_t seqn, index, flags[DPAA_TX_BURST_SIZE] = {0};
+	struct rte_mbuf **orig_bufs = bufs;
 
-	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
 		if (ret) {
 			DPAA_PMD_ERR("Failure in affining portal");
@@ -929,7 +1085,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 			if (dpaa_svr_family == SVR_LS1043A_FAMILY &&
 					(mbuf->data_off & 0x7F) != 0x0)
 				realloc_mbuf = 1;
-			seqn = mbuf->seqn;
+			seqn = *dpaa_seqn(mbuf);
 			if (seqn != DPAA_INVALID_MBUF_SEQN) {
 				index = seqn - 1;
 				if (DPAA_PER_LCORE_DQRR_HELD & (1 << index)) {
@@ -963,6 +1119,11 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 				mp = mi->pool;
 			}
 
+			if (unlikely(RTE_MBUF_HAS_EXTBUF(mbuf))) {
+				bp_info = NULL;
+				goto indirect_buf;
+			}
+
 			bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 			if (unlikely(mp->ops_index != bp_info->dpaa_ops_index ||
 				     realloc_mbuf == 1)) {
@@ -981,7 +1142,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 				mbuf = temp_mbuf;
 				realloc_mbuf = 0;
 			}
-
+indirect_buf:
 			state = tx_on_dpaa_pool(mbuf, bp_info,
 						&fd_arr[loop]);
 			if (unlikely(state)) {
@@ -1008,7 +1169,24 @@ send_pkts:
 
 	DPAA_DP_LOG(DEBUG, "Transmitted %d buffers on queue: %p", sent, q);
 
+
+	loop = 0;
+	while (loop < sent) {
+		if (unlikely(RTE_MBUF_HAS_EXTBUF(*orig_bufs)))
+			rte_pktmbuf_free(*orig_bufs);
+		orig_bufs++;
+		loop++;
+	}
+
 	return sent;
+}
+
+uint16_t
+dpaa_eth_queue_tx_slow(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
+{
+	qman_ern_poll_free();
+
+	return dpaa_eth_queue_tx(q, bufs, nb_bufs);
 }
 
 uint16_t dpaa_eth_tx_drop_all(void *q  __rte_unused,

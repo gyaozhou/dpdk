@@ -13,7 +13,10 @@
 #define IFCVF_SUBSYS_DEVICE_ID	0x001A
 
 #define IFCVF_MAX_QUEUES		1
+
+#ifndef VIRTIO_F_IOMMU_PLATFORM
 #define VIRTIO_F_IOMMU_PLATFORM		33
+#endif
 
 /* Common configuration */
 #define IFCVF_PCI_CAP_COMMON_CFG	1
@@ -100,7 +103,7 @@ struct ifcvf_net_config {
 	u8    mac[6];
 	u16   status;
 	u16   max_virtqueue_pairs;
-} __attribute__((packed));
+} __rte_packed;
 
 struct ifcvf_pci_mem_resource {
 	u64      phys_addr; /**< Physical address, 0 if not resource. */
@@ -115,6 +118,7 @@ struct vring_info {
 	u16 size;
 	u16 last_avail_idx;
 	u16 last_used_idx;
+	bool enable;
 };
 
 struct ifcvf_hw {

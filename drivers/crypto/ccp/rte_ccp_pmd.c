@@ -6,7 +6,6 @@
 #include <rte_bus_pci.h>
 #include <rte_bus_vdev.h>
 #include <rte_common.h>
-#include <rte_config.h>
 #include <rte_cryptodev.h>
 #include <rte_cryptodev_pmd.h>
 #include <rte_pci.h>
@@ -23,6 +22,7 @@
 static unsigned int ccp_pmd_init_done;
 uint8_t ccp_cryptodev_driver_id;
 uint8_t cryptodev_cnt;
+extern void *sha_ctx;
 
 struct ccp_pmd_init_params {
 	struct rte_cryptodev_pmd_init_params def_p;
@@ -292,6 +292,9 @@ static struct rte_pci_id ccp_pci_id[] = {
 	{
 		RTE_PCI_DEVICE(0x1022, 0x1468), /* AMD CCP-5b */
 	},
+	{
+		RTE_PCI_DEVICE(0x1022, 0x15df), /* AMD CCP RV */
+	},
 	{.device_id = 0},
 };
 
@@ -303,6 +306,7 @@ cryptodev_ccp_remove(struct rte_vdev_device *dev)
 
 	ccp_pmd_init_done = 0;
 	name = rte_vdev_device_name(dev);
+	rte_free(sha_ctx);
 	if (name == NULL)
 		return -EINVAL;
 
@@ -350,7 +354,8 @@ cryptodev_ccp_create(const char *name,
 
 	dev->feature_flags = RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO |
 			RTE_CRYPTODEV_FF_HW_ACCELERATED |
-			RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING;
+			RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING |
+			RTE_CRYPTODEV_FF_SYM_SESSIONLESS;
 
 	internals = dev->data->dev_private;
 
@@ -385,6 +390,7 @@ cryptodev_ccp_probe(struct rte_vdev_device *vdev)
 	};
 	const char *input_args;
 
+	sha_ctx = (void *)rte_malloc(NULL, SHA512_DIGEST_SIZE, 64);
 	if (ccp_pmd_init_done) {
 		RTE_LOG(INFO, PMD, "CCP PMD already initialized\n");
 		return -EFAULT;

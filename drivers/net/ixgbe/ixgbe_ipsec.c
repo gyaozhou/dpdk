@@ -2,8 +2,8 @@
  * Copyright(c) 2010-2017 Intel Corporation
  */
 
-#include <rte_ethdev_driver.h>
-#include <rte_ethdev_pci.h>
+#include <ethdev_driver.h>
+#include <ethdev_pci.h>
 #include <rte_ip.h>
 #include <rte_jhash.h>
 #include <rte_security_driver.h>
@@ -484,7 +484,8 @@ ixgbe_crypto_update_mb(void *device __rte_unused,
 			get_sec_session_private_data(session);
 	if (ic_session->op == IXGBE_OP_AUTHENTICATED_ENCRYPTION) {
 		union ixgbe_crypto_tx_desc_md *mdata =
-			(union ixgbe_crypto_tx_desc_md *)&m->udata64;
+			(union ixgbe_crypto_tx_desc_md *)
+				rte_security_dynfield(m);
 		mdata->enc = 1;
 		mdata->sa_idx = ic_session->sa_index;
 		mdata->pad_len = ixgbe_crypto_compute_pad_len(m);
@@ -751,5 +752,7 @@ ixgbe_ipsec_ctx_create(struct rte_eth_dev *dev)
 			return -ENOMEM;
 		}
 	}
+	if (rte_security_dynfield_register() < 0)
+		return -rte_errno;
 	return 0;
 }

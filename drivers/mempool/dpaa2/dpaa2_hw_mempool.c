@@ -14,7 +14,7 @@
 #include <errno.h>
 
 #include <rte_mbuf.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_malloc.h>
 #include <rte_memcpy.h>
 #include <rte_string_fns.h>
@@ -35,9 +35,6 @@
 
 struct dpaa2_bp_info *rte_dpaa2_bpid_info;
 static struct dpaa2_bp_list *h_bp_list;
-
-/* Dynamic logging identified for mempool */
-int dpaa2_logtype_mempool;
 
 static int
 rte_hw_mbuf_create_pool(struct rte_mempool *mp)
@@ -69,7 +66,9 @@ rte_hw_mbuf_create_pool(struct rte_mempool *mp)
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_MEMPOOL_ERR("Failure in affining portal");
+			DPAA2_MEMPOOL_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
 			goto err1;
 		}
 	}
@@ -198,7 +197,9 @@ rte_dpaa2_mbuf_release(struct rte_mempool *pool __rte_unused,
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
-			DPAA2_MEMPOOL_ERR("Failed to allocate IO portal");
+			DPAA2_MEMPOOL_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
 			return;
 		}
 	}
@@ -317,7 +318,9 @@ rte_dpaa2_mbuf_alloc_bulk(struct rte_mempool *pool,
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret != 0) {
-			DPAA2_MEMPOOL_ERR("Failed to allocate IO portal");
+			DPAA2_MEMPOOL_ERR(
+				"Failed to allocate IO portal, tid: %d\n",
+				rte_gettid());
 			return ret;
 		}
 	}
@@ -390,6 +393,7 @@ rte_hw_mbuf_get_count(const struct rte_mempool *mp)
 	unsigned int num_of_bufs = 0;
 	struct dpaa2_bp_info *bp_info;
 	struct dpaa2_dpbp_dev *dpbp_node;
+	struct fsl_mc_io mc_io;
 
 	if (!mp || !mp->pool_data) {
 		DPAA2_MEMPOOL_ERR("Invalid mempool provided");
@@ -399,7 +403,12 @@ rte_hw_mbuf_get_count(const struct rte_mempool *mp)
 	bp_info = (struct dpaa2_bp_info *)mp->pool_data;
 	dpbp_node = bp_info->bp_list->buf_pool.dpbp_node;
 
-	ret = dpbp_get_num_free_bufs(&dpbp_node->dpbp, CMD_PRI_LOW,
+	/* In case as secondary process access stats, MCP portal in priv-hw may
+	 * have primary process address. Need the secondary process based MCP
+	 * portal address for this object.
+	 */
+	mc_io.regs = dpaa2_get_mcp_ptr(MC_PORTAL_INDEX);
+	ret = dpbp_get_num_free_bufs(&mc_io, CMD_PRI_LOW,
 				     dpbp_node->token, &num_of_bufs);
 	if (ret) {
 		DPAA2_MEMPOOL_ERR("Unable to obtain free buf count (err=%d)",
@@ -448,9 +457,4 @@ static const struct rte_mempool_ops dpaa2_mpool_ops = {
 
 MEMPOOL_REGISTER_OPS(dpaa2_mpool_ops);
 
-RTE_INIT(dpaa2_mempool_init_log)
-{
-	dpaa2_logtype_mempool = rte_log_register("mempool.dpaa2");
-	if (dpaa2_logtype_mempool >= 0)
-		rte_log_set_level(dpaa2_logtype_mempool, RTE_LOG_NOTICE);
-}
+RTE_LOG_REGISTER(dpaa2_logtype_mempool, mempool.dpaa2, NOTICE);

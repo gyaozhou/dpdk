@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2014-2018 Broadcom
+ * Copyright(c) 2014-2021 Broadcom
  * All rights reserved.
  */
 
@@ -10,6 +10,9 @@
 #include <stdbool.h>
 
 #define INVALID_VNIC_ID		((uint16_t)-1)
+
+#define BNXT_RSS_LEVEL_INNERMOST        0x2
+#define BNXT_RSS_LEVEL_OUTERMOST        0x1
 
 struct bnxt_vnic_info {
 	STAILQ_ENTRY(bnxt_vnic_info)	next;
@@ -69,4 +72,6 @@ int bnxt_alloc_vnic_mem(struct bnxt *bp);
 int bnxt_vnic_grp_alloc(struct bnxt *bp, struct bnxt_vnic_info *vnic);
 void prandom_bytes(void *dest_ptr, size_t len);
 uint16_t bnxt_rte_to_hwrm_hash_types(uint64_t rte_type);
+int bnxt_rte_to_hwrm_hash_level(struct bnxt *bp, uint64_t hash_f, uint32_t lvl);
+uint64_t bnxt_hwrm_to_rte_rss_level(struct bnxt *bp, uint32_t mode);
 #endif

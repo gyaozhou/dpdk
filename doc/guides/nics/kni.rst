@@ -33,7 +33,7 @@ Usage
 
 EAL ``--vdev`` argument can be used to create KNI device instance, like::
 
-        testpmd --vdev=net_kni0 --vdev=net_kn1 -- -i
+        dpdk-testpmd --vdev=net_kni0 --vdev=net_kn1 -- -i
 
 Above command will create ``kni0`` and ``kni1`` Linux network interfaces,
 those interfaces can be controlled by standard Linux tools.
@@ -77,7 +77,7 @@ requests itself.
 
 Argument usage::
 
-        testpmd --vdev "net_kni0,no_request_thread=1" -- -i
+        dpdk-testpmd --vdev "net_kni0,no_request_thread=1" -- -i
 
 
 PMD log messages
@@ -97,13 +97,13 @@ It is possible to test PMD quickly using KNI kernel module loopback feature:
 
     .. code-block:: console
 
-        insmod build/kmod/rte_kni.ko lo_mode=lo_mode_fifo_skb
+        insmod <build_dir>/kernel/linux/kni/rte_kni.ko lo_mode=lo_mode_fifo_skb
 
 * Start testpmd with no physical device but two KNI virtual devices:
 
     .. code-block:: console
 
-        ./testpmd --vdev net_kni0 --vdev net_kni1 -- -i
+        ./dpdk-testpmd --vdev net_kni0 --vdev net_kni1 -- -i
 
     .. code-block:: console
 

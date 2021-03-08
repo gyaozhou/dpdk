@@ -11,7 +11,8 @@ sources = files('rte_table_acl.c',
 		'rte_table_hash_ext.c',
 		'rte_table_hash_lru.c',
 		'rte_table_array.c',
-		'rte_table_stub.c')
+		'rte_table_stub.c',
+		'rte_swx_table_em.c',)
 headers = files('rte_table.h',
 		'rte_table_acl.h',
 		'rte_table_lpm.h',
@@ -19,12 +20,13 @@ headers = files('rte_table.h',
 		'rte_table_hash.h',
 		'rte_table_hash_cuckoo.h',
 		'rte_table_hash_func.h',
-		'rte_table_hash_func_arm64.h',
 		'rte_lru.h',
 		'rte_table_array.h',
-		'rte_table_stub.h')
+		'rte_table_stub.h',
+		'rte_swx_table.h',
+		'rte_swx_table_em.h',)
 deps += ['mbuf', 'port', 'lpm', 'hash', 'acl']
 
-if arch_subdir == 'x86'
-	headers += files('rte_lru_x86.h')
-endif
+indirect_headers += files('rte_lru_x86.h',
+		'rte_lru_arm64.h',
+		'rte_table_hash_func_arm64.h')

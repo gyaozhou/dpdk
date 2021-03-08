@@ -15,6 +15,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
@@ -30,7 +31,7 @@
 #include <rte_debug.h>
 #include <rte_pci.h>
 #include <rte_malloc.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_spinlock.h>
 #include <rte_eal.h>
 #include <rte_mempool.h>
@@ -47,9 +48,6 @@
 #define FALSE               0
 #define TRUE                1
 
-typedef int bool;
-#define false               0
-#define true                1
 #define min(a,b)        RTE_MIN(a,b)
 
 #define mb()    rte_mb()

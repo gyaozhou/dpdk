@@ -2,6 +2,7 @@
  * Copyright(c) 2010-2014 Intel Corporation
  */
 
+#include <glob.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -14,9 +15,9 @@
 
 
 #include <rte_log.h>
+#include <rte_power.h>
 
 #include "guest_channel.h"
-#include "channel_commands.h"
 
 #define RTE_LOGTYPE_GUEST_CHANNEL RTE_LOGTYPE_USER1
 
@@ -26,10 +27,35 @@
 static int global_fds[RTE_MAX_LCORE] = { [0 ... RTE_MAX_LCORE-1] = -1 };
 
 int
+guest_channel_host_check_exists(const char *path)
+{
+	char glob_path[PATH_MAX];
+	glob_t g;
+	int ret;
+
+	/* we cannot know in advance which cores have VM channels, so glob */
+	snprintf(glob_path, PATH_MAX, "%s.*", path);
+
+	ret = glob(glob_path, GLOB_NOSORT, NULL, &g);
+	if (ret != 0) {
+		/* couldn't read anything */
+		ret = 0;
+		goto out;
+	}
+
+	/* do we have at least one match? */
+	ret = g.gl_pathc > 0;
+
+out:
+	globfree(&g);
+	return ret;
+}
+
+int
 guest_channel_host_connect(const char *path, unsigned int lcore_id)
 {
 	int flags, ret;
-	struct channel_packet pkt;
+	struct rte_power_channel_packet pkt;
 	char fd_path[PATH_MAX];
 	int fd = -1;
 
@@ -74,7 +100,7 @@ guest_channel_host_connect(const char *path, unsigned int lcore_id)
 	/* Send a test packet, this command is ignored by the host, but a successful
 	 * send indicates that the host endpoint is monitoring.
 	 */
-	pkt.command = CPU_POWER_CONNECT;
+	pkt.command = RTE_POWER_CPU_POWER_CONNECT;
 	global_fds[lcore_id] = fd;
 	ret = guest_channel_send_msg(&pkt, lcore_id);
 	if (ret != 0) {
@@ -93,7 +119,8 @@ error:
 }
 
 int
-guest_channel_send_msg(struct channel_packet *pkt, unsigned int lcore_id)
+guest_channel_send_msg(struct rte_power_channel_packet *pkt,
+		unsigned int lcore_id)
 {
 	int ret, buffer_len = sizeof(*pkt);
 	void *buffer = pkt;
@@ -123,7 +150,7 @@ guest_channel_send_msg(struct channel_packet *pkt, unsigned int lcore_id)
 	return 0;
 }
 
-int rte_power_guest_channel_send_msg(struct channel_packet *pkt,
+int rte_power_guest_channel_send_msg(struct rte_power_channel_packet *pkt,
 			unsigned int lcore_id)
 {
 	return guest_channel_send_msg(pkt, lcore_id);

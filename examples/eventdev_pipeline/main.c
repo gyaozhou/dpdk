@@ -10,6 +10,8 @@
 
 #include "pipeline_common.h"
 
+struct fastpath_data *fdata;
+
 struct config_data cdata = {
 	.num_packets = (1L << 25), /* do ~32M packets */
 	.num_fids = 512,
@@ -19,6 +21,32 @@ struct config_data cdata = {
 	.num_stages = 1,
 	.worker_cq_depth = 16
 };
+
+static void
+dump_core_info(unsigned int lcore_id, struct worker_data *data,
+		unsigned int worker_idx)
+{
+	if (fdata->rx_core[lcore_id])
+		printf(
+			"[%s()] lcore %d executing NIC Rx\n",
+			__func__, lcore_id);
+
+	if (fdata->tx_core[lcore_id])
+		printf(
+			"[%s()] lcore %d executing NIC Tx\n",
+			__func__, lcore_id);
+
+	if (fdata->sched_core[lcore_id])
+		printf(
+			"[%s()] lcore %d executing scheduler\n",
+			__func__, lcore_id);
+
+	if (fdata->worker_core[lcore_id])
+		printf(
+			"[%s()] lcore %d executing worker, using eventdev port %u\n",
+			__func__, lcore_id,
+			data[worker_idx].port_id);
+}
 
 static bool
 core_in_use(unsigned int lcore_id) {
@@ -79,7 +107,7 @@ parse_coremask(const char *coremask)
 		val = xdigit2val(c);
 		for (j = 0; j < BITS_HEX && idx < MAX_NUM_CORE; j++, idx++) {
 			if ((1 << j) & val) {
-				mask |= (1UL << idx);
+				mask |= (1ULL << idx);
 				count++;
 			}
 		}
@@ -230,15 +258,22 @@ parse_app_args(int argc, char **argv)
 		usage();
 
 	for (i = 0; i < MAX_NUM_CORE; i++) {
-		fdata->rx_core[i] = !!(rx_lcore_mask & (1UL << i));
-		fdata->tx_core[i] = !!(tx_lcore_mask & (1UL << i));
-		fdata->sched_core[i] = !!(sched_lcore_mask & (1UL << i));
-		fdata->worker_core[i] = !!(worker_lcore_mask & (1UL << i));
+		fdata->rx_core[i] = !!(rx_lcore_mask & (1ULL << i));
+		fdata->tx_core[i] = !!(tx_lcore_mask & (1ULL << i));
+		fdata->sched_core[i] = !!(sched_lcore_mask & (1ULL << i));
+		fdata->worker_core[i] = !!(worker_lcore_mask & (1ULL << i));
 
 		if (fdata->worker_core[i])
 			cdata.num_workers++;
-		if (core_in_use(i))
+		if (core_in_use(i)) {
+			if (!rte_lcore_is_enabled(i)) {
+				printf("lcore %d is not enabled in lcore list\n",
+					i);
+				rte_exit(EXIT_FAILURE,
+					"check lcore params failed\n");
+			}
 			cdata.active_cores++;
+		}
 	}
 }
 
@@ -278,7 +313,6 @@ static void
 signal_handler(int signum)
 {
 	static uint8_t once;
-	uint16_t portid;
 
 	if (fdata->done)
 		rte_exit(1, "Exiting on signal %d\n", signum);
@@ -289,22 +323,6 @@ signal_handler(int signum)
 			rte_event_dev_dump(0, stdout);
 		once = 1;
 		fdata->done = 1;
-		rte_smp_wmb();
-
-		RTE_ETH_FOREACH_DEV(portid) {
-			rte_event_eth_rx_adapter_stop(portid);
-			rte_event_eth_tx_adapter_stop(portid);
-			rte_eth_dev_stop(portid);
-		}
-
-		rte_eal_mp_wait_lcore();
-
-		RTE_ETH_FOREACH_DEV(portid) {
-			rte_eth_dev_close(portid);
-		}
-
-		rte_event_dev_stop(0);
-		rte_event_dev_close(0);
 	}
 	if (signum == SIGTSTP)
 		rte_event_dev_dump(0, stdout);
@@ -399,7 +417,7 @@ main(int argc, char **argv)
 	}
 
 	int worker_idx = 0;
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		if (lcore_id >= MAX_NUM_CORE)
 			break;
 
@@ -409,25 +427,7 @@ main(int argc, char **argv)
 			!fdata->sched_core[lcore_id])
 			continue;
 
-		if (fdata->rx_core[lcore_id])
-			printf(
-				"[%s()] lcore %d executing NIC Rx\n",
-				__func__, lcore_id);
-
-		if (fdata->tx_core[lcore_id])
-			printf(
-				"[%s()] lcore %d executing NIC Tx\n",
-				__func__, lcore_id);
-
-		if (fdata->sched_core[lcore_id])
-			printf("[%s()] lcore %d executing scheduler\n",
-					__func__, lcore_id);
-
-		if (fdata->worker_core[lcore_id])
-			printf(
-				"[%s()] lcore %d executing worker, using eventdev port %u\n",
-				__func__, lcore_id,
-				worker_data[worker_idx].port_id);
+		dump_core_info(lcore_id, worker_data, worker_idx);
 
 		err = rte_eal_remote_launch(fdata->cap.worker,
 				&worker_data[worker_idx], lcore_id);
@@ -442,8 +442,13 @@ main(int argc, char **argv)
 
 	lcore_id = rte_lcore_id();
 
-	if (core_in_use(lcore_id))
-		fdata->cap.worker(&worker_data[worker_idx++]);
+	if (core_in_use(lcore_id)) {
+		dump_core_info(lcore_id, worker_data, worker_idx);
+		fdata->cap.worker(&worker_data[worker_idx]);
+
+		if (fdata->worker_core[lcore_id])
+			worker_idx++;
+	}
 
 	rte_eal_mp_wait_lcore();
 
@@ -466,6 +471,19 @@ main(int argc, char **argv)
 		}
 
 	}
+
+	RTE_ETH_FOREACH_DEV(portid) {
+		rte_event_eth_rx_adapter_stop(portid);
+		rte_event_eth_tx_adapter_stop(portid);
+		if (rte_eth_dev_stop(portid) < 0)
+			printf("Failed to stop port %u", portid);
+		rte_eth_dev_close(portid);
+	}
+
+	rte_event_dev_stop(0);
+	rte_event_dev_close(0);
+
+	rte_eal_cleanup();
 
 	return 0;
 }

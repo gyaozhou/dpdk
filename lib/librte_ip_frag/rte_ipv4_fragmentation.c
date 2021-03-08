@@ -8,6 +8,7 @@
 #include <rte_memcpy.h>
 #include <rte_mempool.h>
 #include <rte_debug.h>
+#include <rte_ether.h>
 
 #include "ip_frag_common.h"
 
@@ -90,6 +91,15 @@ rte_ipv4_fragment_packet(struct rte_mbuf *pkt_in,
 
     // zhou: fragment size should align with 8 bytes, due to Fragment Offset
     //       is in unit 8 bytes.
+	/*
+	 * Formal parameter checking.
+	 */
+	if (unlikely(pkt_in == NULL) || unlikely(pkts_out == NULL) ||
+	    unlikely(nb_pkts_out == 0) ||
+	    unlikely(pool_direct == NULL) || unlikely(pool_indirect == NULL) ||
+	    unlikely(mtu_size < RTE_ETHER_MIN_MTU))
+		return -EINVAL;
+
 	/*
 	 * Ensure the IP payload length of all fragments is aligned to a
 	 * multiple of 8 bytes as per RFC791 section 2.3.

@@ -33,6 +33,12 @@ struct nfp_net_adapter;
 #define NFP_NET_MAX_RX_DESC (32 * 1024)
 #define NFP_NET_MIN_RX_DESC 64
 
+/* Descriptor alignment */
+#define NFP_ALIGN_RING_DESC 128
+
+#define NFP_TX_MAX_SEG     UINT8_MAX
+#define NFP_TX_MAX_MTU_SEG 8
+
 /* Bar allocation */
 #define NFP_NET_CRTL_BAR        0
 #define NFP_NET_TX_BAR          2
@@ -95,6 +101,9 @@ struct nfp_net_adapter;
 #define NFD_CFG_MINOR_VERSION_shf   0
 #define NFD_CFG_MINOR_VERSION(x)    (((x) & 0xff) << 0)
 #define NFD_CFG_MINOR_VERSION_of(x) (((x) >> 0) & 0xff)
+
+/* Number of supported physical ports */
+#define NFP_MAX_PHYPORTS	12
 
 #include <linux/types.h>
 #include <rte_io.h>
@@ -182,7 +191,7 @@ struct nfp_net_tx_desc {
 				__le16 vlan; /* VLAN tag to add if indicated */
 			};
 			__le16 data_len;    /* Length of frame + meta data */
-		} __attribute__((__packed__));
+		} __rte_packed;
 		__le32 vals[4];
 	};
 };
@@ -243,7 +252,7 @@ struct nfp_net_txq {
 	int qidx;
 	int tx_qcidx;
 	__le64 dma;
-} __attribute__ ((__aligned__(64)));
+} __rte_aligned(64);
 
 /* RX and freelist descriptor format */
 #define PCIE_DESC_RX_DD                 (1 << 7)
@@ -278,7 +287,7 @@ struct nfp_net_rx_desc {
 			uint8_t dd;
 
 			__le32 dma_addr_lo;
-		} __attribute__((__packed__)) fld;
+		} __rte_packed fld;
 
 		/* RX descriptor */
 		struct {
@@ -288,7 +297,7 @@ struct nfp_net_rx_desc {
 
 			__le16 flags;
 			__le16 vlan;
-		} __attribute__((__packed__)) rxd;
+		} __rte_packed rxd;
 
 		__le32 vals[2];
 	};
@@ -374,9 +383,62 @@ struct nfp_net_rxq {
 	int qidx;
 	int fl_qcidx;
 	int rx_qcidx;
-} __attribute__ ((__aligned__(64)));
+} __rte_aligned(64);
+
+struct nfp_pf_dev {
+	/* Backpointer to associated pci device */
+	struct rte_pci_device *pci_dev;
+
+	/* First physical port's eth device */
+	struct rte_eth_dev *eth_dev;
+
+	/* Array of physical ports belonging to this PF */
+	struct nfp_net_hw *ports[NFP_MAX_PHYPORTS];
+
+	/* Current values for control */
+	uint32_t ctrl;
+
+	uint8_t *ctrl_bar;
+	uint8_t *tx_bar;
+	uint8_t *rx_bar;
+
+	uint8_t *qcp_cfg;
+	rte_spinlock_t reconfig_lock;
+
+	uint16_t flbufsz;
+	uint16_t device_id;
+	uint16_t vendor_id;
+	uint16_t subsystem_device_id;
+	uint16_t subsystem_vendor_id;
+#if defined(DSTQ_SELECTION)
+#if DSTQ_SELECTION
+	uint16_t device_function;
+#endif
+#endif
+
+	struct nfp_cpp *cpp;
+	struct nfp_cpp_area *ctrl_area;
+	struct nfp_cpp_area *hwqueues_area;
+	struct nfp_cpp_area *msix_area;
+
+	uint8_t *hw_queues;
+	uint8_t total_phyports;
+	bool	multiport;
+
+	union eth_table_entry *eth_table;
+
+	struct nfp_hwinfo *hwinfo;
+	struct nfp_rtsym_table *sym_tbl;
+	uint32_t nfp_cpp_service_id;
+};
 
 struct nfp_net_hw {
+	/* Backpointer to the PF this port belongs to */
+	struct nfp_pf_dev *pf_dev;
+
+	/* Backpointer to the eth_dev of this port*/
+	struct rte_eth_dev *eth_dev;
+
 	/* Info from the firmware */
 	uint32_t ver;
 	uint32_t cap;
@@ -421,15 +483,11 @@ struct nfp_net_hw {
 	struct nfp_cpp_area *msix_area;
 
 	uint8_t *hw_queues;
-	uint8_t is_pf;
-	uint8_t pf_port_idx;
-	uint8_t pf_multiport_enabled;
-	uint8_t total_ports;
+	uint8_t idx;
+	bool	is_phyport;
 
 	union eth_table_entry *eth_table;
 
-	struct nfp_hwinfo *hwinfo;
-	struct nfp_rtsym_table *sym_tbl;
 	uint32_t nfp_cpp_service_id;
 };
 
@@ -439,6 +497,9 @@ struct nfp_net_adapter {
 
 #define NFP_NET_DEV_PRIVATE_TO_HW(adapter)\
 	(&((struct nfp_net_adapter *)adapter)->hw)
+
+#define NFP_NET_DEV_PRIVATE_TO_PF(dev_priv)\
+	(((struct nfp_net_hw *)dev_priv)->pf_dev)
 
 #endif /* _NFP_NET_PMD_H_ */
 /*

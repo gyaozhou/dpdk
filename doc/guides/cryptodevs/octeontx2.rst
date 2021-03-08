@@ -55,6 +55,7 @@ Hash algorithms:
 AEAD algorithms:
 
 * ``RTE_CRYPTO_AEAD_AES_GCM``
+* ``RTE_CRYPTO_AEAD_CHACHA20_POLY1305``
 
 Asymmetric Crypto Algorithms
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -68,10 +69,6 @@ Installation
 
 The OCTEON TX2 crypto PMD may be compiled natively on an OCTEON TX2 platform or
 cross-compiled on an x86 platform.
-
-Enable OCTEON TX2 crypto PMD in your config file:
-
-* ``CONFIG_RTE_LIBRTE_PMD_OCTEONTX2_CRYPTO=y``
 
 Refer to :doc:`../platform/octeontx2` for instructions to build your DPDK
 application.
@@ -120,11 +117,15 @@ Another way to bind the VF would be to use the ``dpdk-devbind.py`` script:
 
 .. note::
 
-    Ensure that sufficient huge pages are available for your application::
+    * For CN98xx SoC, it is recommended to use even and odd DBDF VFs to achieve
+      higher performance as even VF uses one crypto engine and odd one uses
+      another crypto engine.
 
-        echo 8 > /sys/kernel/mm/hugepages/hugepages-524288kB/nr_hugepages
+    * Ensure that sufficient huge pages are available for your application::
 
-    Refer to :ref:`linux_gsg_hugepages` for more details.
+         dpdk-hugepages.py --setup 4G --pagesize 512M
+
+      Refer to :ref:`linux_gsg_hugepages` for more details.
 
 Debugging Options
 -----------------
@@ -147,7 +148,7 @@ application:
 
 .. code-block:: console
 
-    ./test
+    ./dpdk-test
     RTE>>cryptodev_octeontx2_autotest
 
 The asymmetric crypto operations on OCTEON TX2 crypto PMD may be verified by running the test
@@ -155,5 +156,31 @@ application:
 
 .. code-block:: console
 
-    ./test
+    ./dpdk-test
     RTE>>cryptodev_octeontx2_asym_autotest
+
+
+Lookaside IPsec Support
+-----------------------
+
+The OCTEON TX2 SoC can accelerate IPsec traffic in lookaside protocol mode,
+with its **cryptographic accelerator (CPT)**. ``OCTEON TX2 crypto PMD`` implements
+this as an ``RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL`` offload.
+
+Refer to :doc:`../prog_guide/rte_security` for more details on protocol offloads.
+
+This feature can be tested with ipsec-secgw sample application.
+
+
+Features supported
+~~~~~~~~~~~~~~~~~~
+
+* IPv4
+* IPv6
+* ESP
+* Tunnel mode
+* ESN
+* Anti-replay
+* AES-128/192/256-GCM
+* AES-128/192/256-CBC-SHA1-HMAC
+* AES-128/192/256-CBC-SHA256-128-HMAC

@@ -1,12 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2017-2018 Broadcom
+ * Copyright(c) 2017-2021 Broadcom
  * All rights reserved.
  */
 
 #ifndef _PMD_BNXT_H_
 #define _PMD_BNXT_H_
 
-#include <rte_ethdev_driver.h>
+#include <rte_ethdev.h>
+#include <rte_ether.h>
+
+/** mbuf dynamic field where CFA code is stored */
+#define RTE_PMD_BNXT_CFA_CODE_DYNFIELD_NAME "rte_net_bnxt_dynfield_cfa_code"
 
 /*
  * Response sent back to the caller after callback

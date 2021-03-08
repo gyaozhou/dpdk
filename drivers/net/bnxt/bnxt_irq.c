@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2014-2018 Broadcom
+ * Copyright(c) 2014-2021 Broadcom
  * All rights reserved.
  */
 
@@ -180,6 +180,14 @@ int bnxt_request_int(struct bnxt *bp)
 		if (!rc)
 			irq->requested = 1;
 	}
+
+#ifdef RTE_EXEC_ENV_FREEBSD
+	/**
+	 * In FreeBSD OS, nic_uio does not support interrupts and
+	 * interrupt register callback will fail.
+	 */
+	rc = 0;
+#endif
 
 	return rc;
 }

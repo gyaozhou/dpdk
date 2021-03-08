@@ -15,7 +15,7 @@
 #include <rte_debug.h>
 #include <rte_eal.h>
 #include <rte_ether.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_memcpy.h>
 #include <rte_malloc.h>
 #include <rte_random.h>
@@ -66,7 +66,7 @@ ixgbe_mb_intr_setup(struct rte_eth_dev *dev)
 	return 0;
 }
 
-void ixgbe_pf_host_init(struct rte_eth_dev *eth_dev)
+int ixgbe_pf_host_init(struct rte_eth_dev *eth_dev)
 {
 	struct ixgbe_vf_info **vfinfo =
 		IXGBE_DEV_PRIVATE_TO_P_VFDATA(eth_dev->data->dev_private);
@@ -78,19 +78,30 @@ void ixgbe_pf_host_init(struct rte_eth_dev *eth_dev)
 		IXGBE_DEV_PRIVATE_TO_HW(eth_dev->data->dev_private);
 	uint16_t vf_num;
 	uint8_t nb_queue;
+	int ret = 0;
 
 	PMD_INIT_FUNC_TRACE();
 
 	RTE_ETH_DEV_SRIOV(eth_dev).active = 0;
 	vf_num = dev_num_vf(eth_dev);
 	if (vf_num == 0)
-		return;
+		return ret;
 
 	*vfinfo = rte_zmalloc("vf_info", sizeof(struct ixgbe_vf_info) * vf_num, 0);
-	if (*vfinfo == NULL)
-		rte_panic("Cannot allocate memory for private VF data\n");
+	if (*vfinfo == NULL) {
+		PMD_INIT_LOG(ERR,
+			"Cannot allocate memory for private VF data");
+		return -ENOMEM;
+	}
 
-	rte_eth_switch_domain_alloc(&(*vfinfo)->switch_domain_id);
+	ret = rte_eth_switch_domain_alloc(&(*vfinfo)->switch_domain_id);
+	if (ret) {
+		PMD_INIT_LOG(ERR,
+			"failed to allocate switch domain for device %d", ret);
+		rte_free(*vfinfo);
+		*vfinfo = NULL;
+		return ret;
+	}
 
 	memset(mirror_info, 0, sizeof(struct ixgbe_mirror_info));
 	memset(uta_info, 0, sizeof(struct ixgbe_uta_info));
@@ -118,6 +129,8 @@ void ixgbe_pf_host_init(struct rte_eth_dev *eth_dev)
 
 	/* set mb interrupt mask */
 	ixgbe_mb_intr_setup(eth_dev);
+
+	return ret;
 }
 
 void ixgbe_pf_host_uninit(struct rte_eth_dev *eth_dev)
@@ -541,19 +554,47 @@ ixgbe_vf_set_vlan(struct rte_eth_dev *dev, uint32_t vf, uint32_t *msgbuf)
 }
 
 static int
-ixgbe_set_vf_lpe(struct rte_eth_dev *dev, __rte_unused uint32_t vf, uint32_t *msgbuf)
+ixgbe_set_vf_lpe(struct rte_eth_dev *dev, uint32_t vf, uint32_t *msgbuf)
 {
 	struct ixgbe_hw *hw = IXGBE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
-	uint32_t new_mtu = msgbuf[1];
+	uint32_t max_frame = msgbuf[1];
 	uint32_t max_frs;
-	int max_frame = new_mtu + RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN;
+	uint32_t hlreg0;
 
 	/* X540 and X550 support jumbo frames in IOV mode */
 	if (hw->mac.type != ixgbe_mac_X540 &&
 		hw->mac.type != ixgbe_mac_X550 &&
 		hw->mac.type != ixgbe_mac_X550EM_x &&
-		hw->mac.type != ixgbe_mac_X550EM_a)
-		return -1;
+		hw->mac.type != ixgbe_mac_X550EM_a) {
+		struct ixgbe_vf_info *vfinfo =
+			*IXGBE_DEV_PRIVATE_TO_P_VFDATA(dev->data->dev_private);
+
+		switch (vfinfo[vf].api_version) {
+		case ixgbe_mbox_api_11:
+		case ixgbe_mbox_api_12:
+		case ixgbe_mbox_api_13:
+			 /**
+			  * Version 1.1&1.2&1.3 supports jumbo frames on VFs
+			  * if PF has jumbo frames enabled which means legacy
+			  * VFs are disabled.
+			  */
+			if (dev->data->dev_conf.rxmode.max_rx_pkt_len >
+			    IXGBE_ETH_MAX_LEN)
+				break;
+			/* fall through */
+		default:
+			/**
+			 * If the PF or VF are running w/ jumbo frames enabled,
+			 * we return -1 as we cannot support jumbo frames on
+			 * legacy VFs.
+			 */
+			if (max_frame > IXGBE_ETH_MAX_LEN ||
+			    dev->data->dev_conf.rxmode.max_rx_pkt_len >
+			    IXGBE_ETH_MAX_LEN)
+				return -1;
+			break;
+		}
+	}
 
 	if (max_frame < RTE_ETHER_MIN_LEN ||
 			max_frame > RTE_ETHER_MAX_JUMBO_FRAME_LEN)
@@ -561,8 +602,20 @@ ixgbe_set_vf_lpe(struct rte_eth_dev *dev, __rte_unused uint32_t vf, uint32_t *ms
 
 	max_frs = (IXGBE_READ_REG(hw, IXGBE_MAXFRS) &
 		   IXGBE_MHADD_MFS_MASK) >> IXGBE_MHADD_MFS_SHIFT;
-	if (max_frs < new_mtu) {
-		max_frs = new_mtu << IXGBE_MHADD_MFS_SHIFT;
+	if (max_frs < max_frame) {
+		hlreg0 = IXGBE_READ_REG(hw, IXGBE_HLREG0);
+		if (max_frame > IXGBE_ETH_MAX_LEN) {
+			dev->data->dev_conf.rxmode.offloads |=
+				DEV_RX_OFFLOAD_JUMBO_FRAME;
+			hlreg0 |= IXGBE_HLREG0_JUMBOEN;
+		} else {
+			dev->data->dev_conf.rxmode.offloads &=
+				~DEV_RX_OFFLOAD_JUMBO_FRAME;
+			hlreg0 &= ~IXGBE_HLREG0_JUMBOEN;
+		}
+		IXGBE_WRITE_REG(hw, IXGBE_HLREG0, hlreg0);
+
+		max_frs = max_frame << IXGBE_MHADD_MFS_SHIFT;
 		IXGBE_WRITE_REG(hw, IXGBE_MAXFRS, max_frs);
 	}
 
@@ -751,6 +804,36 @@ out:
 }
 
 static int
+ixgbe_set_vf_macvlan_msg(struct rte_eth_dev *dev, uint32_t vf, uint32_t *msgbuf)
+{
+	struct ixgbe_hw *hw = IXGBE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct ixgbe_vf_info *vf_info =
+		*(IXGBE_DEV_PRIVATE_TO_P_VFDATA(dev->data->dev_private));
+	uint8_t *new_mac = (uint8_t *)(&msgbuf[1]);
+	int index = (msgbuf[0] & IXGBE_VT_MSGINFO_MASK) >>
+		    IXGBE_VT_MSGINFO_SHIFT;
+
+	if (index) {
+		if (!rte_is_valid_assigned_ether_addr(
+			(struct rte_ether_addr *)new_mac)) {
+			PMD_DRV_LOG(ERR, "set invalid mac vf:%d\n", vf);
+			return -1;
+		}
+
+		vf_info[vf].mac_count++;
+
+		hw->mac.ops.set_rar(hw, vf_info[vf].mac_count,
+				new_mac, vf, IXGBE_RAH_AV);
+	} else {
+		if (vf_info[vf].mac_count) {
+			hw->mac.ops.clear_rar(hw, vf_info[vf].mac_count);
+			vf_info[vf].mac_count = 0;
+		}
+	}
+	return 0;
+}
+
+static int
 ixgbe_rcv_msg_from_vf(struct rte_eth_dev *dev, uint16_t vf)
 {
 	uint16_t mbx_size = IXGBE_VFMAILBOX_SIZE;
@@ -791,7 +874,7 @@ ixgbe_rcv_msg_from_vf(struct rte_eth_dev *dev, uint16_t vf)
 		vfinfo[vf].clear_to_send = true;
 
 		/* notify application about VF reset */
-		_rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_VF_MBOX,
+		rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_VF_MBOX,
 					      &ret_param);
 		return ret;
 	}
@@ -803,8 +886,7 @@ ixgbe_rcv_msg_from_vf(struct rte_eth_dev *dev, uint16_t vf)
 	 * if 0, do nothing and send ACK to VF
 	 * if ret_param.retval > 1, do nothing and send NAK to VF
 	 */
-	_rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_VF_MBOX,
-				      &ret_param);
+	rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_VF_MBOX, &ret_param);
 
 	retval = ret_param.retval;
 
@@ -836,6 +918,10 @@ ixgbe_rcv_msg_from_vf(struct rte_eth_dev *dev, uint16_t vf)
 	case IXGBE_VF_UPDATE_XCAST_MODE:
 		if (retval == RTE_PMD_IXGBE_MB_EVENT_PROCEED)
 			retval = ixgbe_set_vf_mc_promisc(dev, vf, msgbuf);
+		break;
+	case IXGBE_VF_SET_MACVLAN:
+		if (retval == RTE_PMD_IXGBE_MB_EVENT_PROCEED)
+			retval = ixgbe_set_vf_macvlan_msg(dev, vf, msgbuf);
 		break;
 	default:
 		PMD_DRV_LOG(DEBUG, "Unhandled Msg %8.8x", (unsigned)msgbuf[0]);

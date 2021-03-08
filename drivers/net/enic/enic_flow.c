@@ -5,7 +5,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <rte_log.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_flow_driver.h>
 #include <rte_ether.h>
 #include <rte_ip.h>
@@ -47,7 +47,7 @@ struct enic_items {
 	/** True if it's OK for this item to be the first item. For some NIC
 	 * versions, it's invalid to start the stack above layer 3.
 	 */
-	const u8 valid_start_item;
+	const uint8_t valid_start_item;
 	/* Inner packet version of copy_item. */
 	enic_copy_item_fn *inner_copy_item;
 };
@@ -370,7 +370,7 @@ static const struct enic_action_cap enic_action_cap[] = {
 };
 
 static int
-mask_exact_match(const u8 *supported, const u8 *supplied,
+mask_exact_match(const uint8_t *supported, const uint8_t *supplied,
 		 unsigned int size)
 {
 	unsigned int i;
@@ -406,8 +406,8 @@ enic_copy_item_ipv4_v1(struct copy_item_args *arg)
 	}
 
 	/* check that the suppied mask exactly matches capabilty */
-	if (!mask_exact_match((const u8 *)&supported_mask,
-			      (const u8 *)item->mask, sizeof(*mask))) {
+	if (!mask_exact_match((const uint8_t *)&supported_mask,
+			      (const uint8_t *)item->mask, sizeof(*mask))) {
 		ENICPMD_LOG(ERR, "IPv4 exact match mask");
 		return ENOTSUP;
 	}
@@ -444,8 +444,8 @@ enic_copy_item_udp_v1(struct copy_item_args *arg)
 	}
 
 	/* check that the suppied mask exactly matches capabilty */
-	if (!mask_exact_match((const u8 *)&supported_mask,
-			      (const u8 *)item->mask, sizeof(*mask))) {
+	if (!mask_exact_match((const uint8_t *)&supported_mask,
+			      (const uint8_t *)item->mask, sizeof(*mask))) {
 		ENICPMD_LOG(ERR, "UDP exact match mask");
 		return ENOTSUP;
 	}
@@ -483,8 +483,8 @@ enic_copy_item_tcp_v1(struct copy_item_args *arg)
 	}
 
 	/* check that the suppied mask exactly matches capabilty */
-	if (!mask_exact_match((const u8 *)&supported_mask,
-			     (const u8 *)item->mask, sizeof(*mask))) {
+	if (!mask_exact_match((const uint8_t *)&supported_mask,
+			     (const uint8_t *)item->mask, sizeof(*mask))) {
 		ENICPMD_LOG(ERR, "TCP exact match mask");
 		return ENOTSUP;
 	}
@@ -995,7 +995,7 @@ enic_copy_item_raw_v2(struct copy_item_args *arg)
  */
 static int
 item_stacking_valid(enum rte_flow_item_type prev_item,
-		    const struct enic_items *item_info, u8 is_first_item)
+		    const struct enic_items *item_info, uint8_t is_first_item)
 {
 	enum rte_flow_item_type const *allowed_items = item_info->prev_items;
 
@@ -1063,12 +1063,12 @@ enic_copy_filter(const struct rte_flow_item pattern[],
 {
 	int ret;
 	const struct rte_flow_item *item = pattern;
-	u8 inner_ofst = 0; /* If encapsulated, ofst into L5 */
+	uint8_t inner_ofst = 0; /* If encapsulated, ofst into L5 */
 	enum rte_flow_item_type prev_item;
 	const struct enic_items *item_info;
 	struct copy_item_args args;
 	enic_copy_item_fn *copy_fn;
-	u8 is_first_item = 1;
+	uint8_t is_first_item = 1;
 
 	ENICPMD_FUNC_TRACE();
 
@@ -1208,7 +1208,8 @@ enic_copy_action_v2(struct enic *enic,
 			const struct rte_flow_action_mark *mark =
 				(const struct rte_flow_action_mark *)
 				actions->conf;
-
+			if (enic->use_noscatter_vec_rx_handler)
+				return ENOTSUP;
 			if (overlap & MARK)
 				return ENOTSUP;
 			overlap |= MARK;
@@ -1228,6 +1229,8 @@ enic_copy_action_v2(struct enic *enic,
 			break;
 		}
 		case RTE_FLOW_ACTION_TYPE_FLAG: {
+			if (enic->use_noscatter_vec_rx_handler)
+				return ENOTSUP;
 			if (overlap & MARK)
 				return ENOTSUP;
 			overlap |= MARK;
@@ -1389,7 +1392,7 @@ enic_dump_filter(const struct filter_v2 *filt)
 
 		if (gp->mask_flags & FILTER_GENERIC_1_IPV6)
 			sprintf(ip6, "%s ",
-				(gp->val_flags & FILTER_GENERIC_1_IPV4)
+				(gp->val_flags & FILTER_GENERIC_1_IPV6)
 				 ? "ip6(y)" : "ip6(n)");
 		else
 			sprintf(ip6, "%s ", "ip6(x)");
@@ -1595,6 +1598,8 @@ enic_flow_parse(struct rte_eth_dev *dev,
 		return -rte_errno;
 	}
 	enic_filter->type = enic->flow_filter_mode;
+	if (enic->adv_filters)
+		enic_filter->type = FILTER_DPDK_1;
 	ret = enic_copy_filter(pattern, enic_filter_cap, enic,
 				       enic_filter, error);
 	return ret;
@@ -1618,7 +1623,7 @@ enic_flow_add_filter(struct enic *enic, struct filter_v2 *enic_filter,
 {
 	struct rte_flow *flow;
 	int err;
-	u16 entry;
+	uint16_t entry;
 
 	ENICPMD_FUNC_TRACE();
 
@@ -1660,7 +1665,7 @@ static int
 enic_flow_del_filter(struct enic *enic, struct rte_flow *flow,
 		   struct rte_flow_error *error)
 {
-	u16 filter_id;
+	uint16_t filter_id;
 	int err;
 
 	ENICPMD_FUNC_TRACE();

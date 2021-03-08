@@ -16,7 +16,8 @@
  * traffic shaping, congestion management, packet marking, etc.
  *
  * @warning
- * @b EXPERIMENTAL: this API may change without prior notice
+ * @b EXPERIMENTAL:
+ * All functions in this file may be changed or removed without prior notice.
  */
 
 #include <stdint.h>
@@ -251,6 +252,23 @@ struct rte_tm_capabilities {
 	 */
 	uint64_t shaper_private_rate_max;
 
+	/** Shaper private packet mode supported. When non-zero, this parameter
+	 * indicates that there is at least one node that can be configured
+	 * with packet mode in its private shaper. When shaper is configured
+	 * in packet mode, committed/peak rate provided is interpreted
+	 * in packets per second.
+	 */
+	int shaper_private_packet_mode_supported;
+
+	/** Shaper private byte mode supported. When non-zero, this parameter
+	 * indicates that there is at least one node that can be configured
+	 * with byte mode in its private shaper. When shaper is configured
+	 * in byte mode, committed/peak rate provided is interpreted in
+	 * bytes per second.
+	 */
+	int shaper_private_byte_mode_supported;
+
+
 	/** Maximum number of shared shapers. The value of zero indicates that
 	 * shared shapers are not supported.
 	 */
@@ -284,6 +302,21 @@ struct rte_tm_capabilities {
 	 * shaper. Only valid when shared shapers are supported.
 	 */
 	uint64_t shaper_shared_rate_max;
+
+	/** Shaper shared packet mode supported. When non-zero, this parameter
+	 * indicates a shared shaper can be configured with packet mode.
+	 * When shared shaper is configured in packet mode, committed/peak rate
+	 * provided is interpreted in packets per second.
+	 */
+	int shaper_shared_packet_mode_supported;
+
+	/** Shaper shared byte mode supported. When non-zero, this parameter
+	 * indicates that a shared shaper can be configured with byte mode.
+	 * When shared shaper is configured in byte mode, committed/peak rate
+	 * provided is interpreted in bytes per second.
+	 */
+	int shaper_shared_byte_mode_supported;
+
 
 	/** Minimum value allowed for packet length adjustment for any private
 	 * or shared shaper.
@@ -339,6 +372,22 @@ struct rte_tm_capabilities {
 	 * with same priority have the same WFQ weight, so WFQ is reduced to FQ.
 	 */
 	uint32_t sched_wfq_weight_max;
+
+	/** WFQ packet mode supported. When non-zero, this parameter indicates
+	 * that there is at least one non-leaf node that supports packet mode
+	 * for WFQ among its children. WFQ weights will be applied against
+	 * packet count for scheduling children when a non-leaf node
+	 * is configured appropriately.
+	 */
+	int sched_wfq_packet_mode_supported;
+
+	/** WFQ byte mode supported. When non-zero, this parameter indicates
+	 * that there is at least one non-leaf node that supports byte mode
+	 * for WFQ among its children. WFQ weights will be applied against
+	 * bytes for scheduling children when a non-leaf node is configured
+	 * appropriately.
+	 */
+	int sched_wfq_byte_mode_supported;
 
 	/** WRED packet mode support. When non-zero, this parameter indicates
 	 * that there is at least one leaf node that supports the WRED packet
@@ -486,6 +535,24 @@ struct rte_tm_level_capabilities {
 			 */
 			uint64_t shaper_private_rate_max;
 
+			/** Shaper private packet mode supported. When non-zero,
+			 * this parameter indicates there is at least one
+			 * non-leaf node at this level that can be configured
+			 * with packet mode in its private shaper. When private
+			 * shaper is configured in packet mode, committed/peak
+			 * rate provided is interpreted in packets per second.
+			 */
+			int shaper_private_packet_mode_supported;
+
+			/** Shaper private byte mode supported. When non-zero,
+			 * this parameter indicates there is at least one
+			 * non-leaf node at this level that can be configured
+			 * with byte mode in its private shaper. When private
+			 * shaper is configured in byte mode, committed/peak
+			 * rate provided is interpreted in bytes per second.
+			 */
+			int shaper_private_byte_mode_supported;
+
 			/** Maximum number of shared shapers that any non-leaf
 			 * node on this level can be part of. The value of zero
 			 * indicates that shared shapers are not supported by
@@ -495,6 +562,20 @@ struct rte_tm_level_capabilities {
 			 * case for all the non-leaf nodes on this level.
 			 */
 			uint32_t shaper_shared_n_max;
+
+			/** Shaper shared packet mode supported. When non-zero,
+			 * this parameter indicates that there is at least one
+			 * non-leaf node on this level that can be part of
+			 * shared shapers which work in packet mode.
+			 */
+			int shaper_shared_packet_mode_supported;
+
+			/** Shaper shared byte mode supported. When non-zero,
+			 * this parameter indicates that there is at least one
+			 * non-leaf node on this level that can be part of
+			 * shared shapers which work in byte mode.
+			 */
+			int shaper_shared_byte_mode_supported;
 
 			/** Maximum number of children nodes. This parameter
 			 * indicates that there is at least one non-leaf node on
@@ -555,6 +636,25 @@ struct rte_tm_level_capabilities {
 			 */
 			uint32_t sched_wfq_weight_max;
 
+			/** WFQ packet mode supported. When non-zero, this
+			 * parameter indicates that there is at least one
+			 * non-leaf node at this level that supports packet
+			 * mode for WFQ among its children. WFQ weights will
+			 * be applied against packet count for scheduling
+			 * children when a non-leaf node is configured
+			 * appropriately.
+			 */
+			int sched_wfq_packet_mode_supported;
+
+			/** WFQ byte mode supported. When non-zero, this
+			 * parameter indicates that there is at least one
+			 * non-leaf node at this level that supports byte
+			 * mode for WFQ among its children. WFQ weights will
+			 * be applied against bytes for scheduling children
+			 * when a non-leaf node is configured appropriately.
+			 */
+			int sched_wfq_byte_mode_supported;
+
 			/** Mask of statistics counter types supported by the
 			 * non-leaf nodes on this level. Every supported
 			 * statistics counter type is supported by at least one
@@ -597,6 +697,24 @@ struct rte_tm_level_capabilities {
 			 */
 			uint64_t shaper_private_rate_max;
 
+			/** Shaper private packet mode supported. When non-zero,
+			 * this parameter indicates there is at least one leaf
+			 * node at this level that can be configured with
+			 * packet mode in its private shaper. When private
+			 * shaper is configured in packet mode, committed/peak
+			 * rate provided is interpreted in packets per second.
+			 */
+			int shaper_private_packet_mode_supported;
+
+			/** Shaper private byte mode supported. When non-zero,
+			 * this parameter indicates there is at least one leaf
+			 * node at this level that can be configured with
+			 * byte mode in its private shaper. When private shaper
+			 * is configured in byte mode, committed/peak rate
+			 * provided is interpreted in bytes per second.
+			 */
+			int shaper_private_byte_mode_supported;
+
 			/** Maximum number of shared shapers that any leaf node
 			 * on this level can be part of. The value of zero
 			 * indicates that shared shapers are not supported by
@@ -606,6 +724,20 @@ struct rte_tm_level_capabilities {
 			 * case for all the leaf nodes on this level.
 			 */
 			uint32_t shaper_shared_n_max;
+
+			/** Shaper shared packet mode supported. When non-zero,
+			 * this parameter indicates that there is at least one
+			 * leaf node on this level that can be part of
+			 * shared shapers which work in packet mode.
+			 */
+			int shaper_shared_packet_mode_supported;
+
+			/** Shaper shared byte mode supported. When non-zero,
+			 * this parameter indicates that there is at least one
+			 * leaf node on this level that can be part of
+			 * shared shapers which work in byte mode.
+			 */
+			int shaper_shared_byte_mode_supported;
 
 			/** WRED packet mode support. When non-zero, this
 			 * parameter indicates that there is at least one leaf
@@ -687,11 +819,37 @@ struct rte_tm_node_capabilities {
 	 */
 	uint64_t shaper_private_rate_max;
 
+	/** Shaper private packet mode supported. When non-zero, this parameter
+	 * indicates private shaper of current node can be configured with
+	 * packet mode. When configured in packet mode, committed/peak rate
+	 * provided is interpreted in packets per second.
+	 */
+	int shaper_private_packet_mode_supported;
+
+	/** Shaper private byte mode supported. When non-zero, this parameter
+	 * indicates private shaper of current node can be configured with
+	 * byte mode. When configured in byte mode, committed/peak rate
+	 * provided is interpreted in bytes per second.
+	 */
+	int shaper_private_byte_mode_supported;
+
 	/** Maximum number of shared shapers the current node can be part of.
 	 * The value of zero indicates that shared shapers are not supported by
 	 * the current node.
 	 */
 	uint32_t shaper_shared_n_max;
+
+	/** Shaper shared packet mode supported. When non-zero,
+	 * this parameter indicates that current node can be part of
+	 * shared shapers which work in packet mode.
+	 */
+	int shaper_shared_packet_mode_supported;
+
+	/** Shaper shared byte mode supported. When non-zero,
+	 * this parameter indicates that current node can be part of
+	 * shared shapers which work in byte mode.
+	 */
+	int shaper_shared_byte_mode_supported;
 
 	RTE_STD_C11
 	union {
@@ -736,6 +894,23 @@ struct rte_tm_node_capabilities {
 			 * WFQ weight, so WFQ is reduced to FQ.
 			 */
 			uint32_t sched_wfq_weight_max;
+
+			/** WFQ packet mode supported. When non-zero, this
+			 * parameter indicates that current node supports packet
+			 * mode for WFQ among its children. WFQ weights will be
+			 * applied against packet count for scheduling children
+			 * when configured appropriately.
+			 */
+			int sched_wfq_packet_mode_supported;
+
+			/** WFQ byte mode supported. When non-zero, this
+			 * parameter indicates that current node supports byte
+			 * mode for WFQ among its children. WFQ weights will be
+			 * applied against  bytes for scheduling children when
+			 * configured appropriately.
+			 */
+			int sched_wfq_byte_mode_supported;
+
 		} nonleaf;
 
 		/** Items valid only for leaf nodes. */
@@ -837,10 +1012,10 @@ struct rte_tm_wred_params {
  * Token bucket
  */
 struct rte_tm_token_bucket {
-	/** Token bucket rate (bytes per second) */
+	/** Token bucket rate (bytes per second or packets per second) */
 	uint64_t rate;
 
-	/** Token bucket size (bytes), a.k.a. max burst size */
+	/** Token bucket size (bytes or packets), a.k.a. max burst size */
 	uint64_t size;
 };
 
@@ -861,6 +1036,11 @@ struct rte_tm_token_bucket {
  * Dual rate shapers use both the committed and the peak token buckets. The
  * rate of the peak bucket has to be bigger than zero, as well as greater than
  * or equal to the rate of the committed bucket.
+ *
+ * @see struct rte_tm_capabilities::shaper_private_packet_mode_supported
+ * @see struct rte_tm_capabilities::shaper_private_byte_mode_supported
+ * @see struct rte_tm_capabilities::shaper_shared_packet_mode_supported
+ * @see struct rte_tm_capabilities::shaper_shared_byte_mode_supported
  */
 struct rte_tm_shaper_params {
 	/** Committed token bucket */
@@ -873,8 +1053,19 @@ struct rte_tm_shaper_params {
 	 * purpose of shaping. Can be used to correct the packet length with
 	 * the framing overhead bytes that are also consumed on the wire (e.g.
 	 * RTE_TM_ETH_FRAMING_OVERHEAD_FCS).
+	 * This field is ignored when the profile enables packet mode.
 	 */
 	int32_t pkt_length_adjust;
+
+	/** When zero, the byte mode is enabled for the current profile, so the
+	 * *rate* and *size* fields in both the committed and peak token buckets
+	 * are specified in bytes per second and bytes, respectively.
+	 * When non-zero, the packet mode is enabled for the current profile,
+	 * so the *rate* and *size* fields in both the committed and peak token
+	 * buckets are specified in packets per second and packets,
+	 * respectively.
+	 */
+	int packet_mode;
 };
 
 /**
@@ -926,6 +1117,8 @@ struct rte_tm_node_params {
 			 * When non-NULL, it points to a pre-allocated array of
 			 * *n_sp_priorities* values, with non-zero value for
 			 * byte-mode and zero for packet-mode.
+			 * @see struct rte_tm_node_capabilities::sched_wfq_packet_mode_supported
+			 * @see struct rte_tm_node_capabilities::sched_wfq_byte_mode_supported
 			 */
 			int *wfq_weight_mode;
 
@@ -998,6 +1191,7 @@ enum rte_tm_error_type {
 	RTE_TM_ERROR_TYPE_SHAPER_PROFILE_PEAK_RATE,
 	RTE_TM_ERROR_TYPE_SHAPER_PROFILE_PEAK_SIZE,
 	RTE_TM_ERROR_TYPE_SHAPER_PROFILE_PKT_ADJUST_LEN,
+	RTE_TM_ERROR_TYPE_SHAPER_PROFILE_PACKET_MODE,
 	RTE_TM_ERROR_TYPE_SHAPER_PROFILE_ID,
 	RTE_TM_ERROR_TYPE_SHARED_SHAPER_ID,
 	RTE_TM_ERROR_TYPE_NODE_PARENT_NODE_ID,
@@ -1051,6 +1245,7 @@ struct rte_tm_error {
  * @return
  *   0 on success, non-zero error code otherwise.
  */
+__rte_experimental
 int
 rte_tm_get_number_of_leaf_nodes(uint16_t port_id,
 	uint32_t *n_leaf_nodes,
@@ -1075,6 +1270,7 @@ rte_tm_get_number_of_leaf_nodes(uint16_t port_id,
  * @return
  *   0 on success, non-zero error code otherwise.
  */
+__rte_experimental
 int
 rte_tm_node_type_get(uint16_t port_id,
 	uint32_t node_id,
@@ -1093,6 +1289,7 @@ rte_tm_node_type_get(uint16_t port_id,
  * @return
  *   0 on success, non-zero error code otherwise.
  */
+__rte_experimental
 int
 rte_tm_capabilities_get(uint16_t port_id,
 	struct rte_tm_capabilities *cap,
@@ -1113,6 +1310,7 @@ rte_tm_capabilities_get(uint16_t port_id,
  * @return
  *   0 on success, non-zero error code otherwise.
  */
+__rte_experimental
 int
 rte_tm_level_capabilities_get(uint16_t port_id,
 	uint32_t level_id,
@@ -1133,6 +1331,7 @@ rte_tm_level_capabilities_get(uint16_t port_id,
  * @return
  *   0 on success, non-zero error code otherwise.
  */
+__rte_experimental
 int
 rte_tm_node_capabilities_get(uint16_t port_id,
 	uint32_t node_id,
@@ -1158,6 +1357,7 @@ rte_tm_node_capabilities_get(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::cman_wred_context_n_max
  */
+__rte_experimental
 int
 rte_tm_wred_profile_add(uint16_t port_id,
 	uint32_t wred_profile_id,
@@ -1181,6 +1381,7 @@ rte_tm_wred_profile_add(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::cman_wred_context_n_max
  */
+__rte_experimental
 int
 rte_tm_wred_profile_delete(uint16_t port_id,
 	uint32_t wred_profile_id,
@@ -1212,6 +1413,7 @@ rte_tm_wred_profile_delete(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::cman_wred_context_shared_n_max
  */
+__rte_experimental
 int
 rte_tm_shared_wred_context_add_update(uint16_t port_id,
 	uint32_t shared_wred_context_id,
@@ -1236,6 +1438,7 @@ rte_tm_shared_wred_context_add_update(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::cman_wred_context_shared_n_max
  */
+__rte_experimental
 int
 rte_tm_shared_wred_context_delete(uint16_t port_id,
 	uint32_t shared_wred_context_id,
@@ -1260,6 +1463,7 @@ rte_tm_shared_wred_context_delete(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::shaper_n_max
  */
+__rte_experimental
 int
 rte_tm_shaper_profile_add(uint16_t port_id,
 	uint32_t shaper_profile_id,
@@ -1283,6 +1487,7 @@ rte_tm_shaper_profile_add(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::shaper_n_max
  */
+__rte_experimental
 int
 rte_tm_shaper_profile_delete(uint16_t port_id,
 	uint32_t shaper_profile_id,
@@ -1312,6 +1517,7 @@ rte_tm_shaper_profile_delete(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::shaper_shared_n_max
  */
+__rte_experimental
 int
 rte_tm_shared_shaper_add_update(uint16_t port_id,
 	uint32_t shared_shaper_id,
@@ -1335,6 +1541,7 @@ rte_tm_shared_shaper_add_update(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::shaper_shared_n_max
  */
+__rte_experimental
 int
 rte_tm_shared_shaper_delete(uint16_t port_id,
 	uint32_t shared_shaper_id,
@@ -1403,6 +1610,7 @@ rte_tm_shared_shaper_delete(uint16_t port_id,
  * @see RTE_TM_NODE_LEVEL_ID_ANY
  * @see struct rte_tm_capabilities
  */
+__rte_experimental
 int
 rte_tm_node_add(uint16_t port_id,
 	uint32_t node_id,
@@ -1436,6 +1644,7 @@ rte_tm_node_add(uint16_t port_id,
  *
  * @see RTE_TM_UPDATE_NODE_ADD_DELETE
  */
+__rte_experimental
 int
 rte_tm_node_delete(uint16_t port_id,
 	uint32_t node_id,
@@ -1460,6 +1669,7 @@ rte_tm_node_delete(uint16_t port_id,
  * @see rte_tm_node_resume()
  * @see RTE_TM_UPDATE_NODE_SUSPEND_RESUME
  */
+__rte_experimental
 int
 rte_tm_node_suspend(uint16_t port_id,
 	uint32_t node_id,
@@ -1483,6 +1693,7 @@ rte_tm_node_suspend(uint16_t port_id,
  * @see rte_tm_node_suspend()
  * @see RTE_TM_UPDATE_NODE_SUSPEND_RESUME
  */
+__rte_experimental
 int
 rte_tm_node_resume(uint16_t port_id,
 	uint32_t node_id,
@@ -1524,6 +1735,7 @@ rte_tm_node_resume(uint16_t port_id,
  * @see rte_tm_node_add()
  * @see rte_tm_node_delete()
  */
+__rte_experimental
 int
 rte_tm_hierarchy_commit(uint16_t port_id,
 	int clear_on_fail,
@@ -1564,6 +1776,7 @@ rte_tm_hierarchy_commit(uint16_t port_id,
  * @see RTE_TM_UPDATE_NODE_PARENT_KEEP_LEVEL
  * @see RTE_TM_UPDATE_NODE_PARENT_CHANGE_LEVEL
  */
+__rte_experimental
 int
 rte_tm_node_parent_update(uint16_t port_id,
 	uint32_t node_id,
@@ -1593,6 +1806,7 @@ rte_tm_node_parent_update(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::shaper_private_n_max
  */
+__rte_experimental
 int
 rte_tm_node_shaper_update(uint16_t port_id,
 	uint32_t node_id,
@@ -1620,6 +1834,7 @@ rte_tm_node_shaper_update(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::shaper_shared_n_max
  */
+__rte_experimental
 int
 rte_tm_node_shared_shaper_update(uint16_t port_id,
 	uint32_t node_id,
@@ -1647,6 +1862,7 @@ rte_tm_node_shared_shaper_update(uint16_t port_id,
  * @see enum rte_tm_stats_type
  * @see RTE_TM_UPDATE_NODE_STATS
  */
+__rte_experimental
 int
 rte_tm_node_stats_update(uint16_t port_id,
 	uint32_t node_id,
@@ -1675,6 +1891,7 @@ rte_tm_node_stats_update(uint16_t port_id,
  * @see RTE_TM_UPDATE_NODE_WFQ_WEIGHT_MODE
  * @see RTE_TM_UPDATE_NODE_N_SP_PRIORITIES
  */
+__rte_experimental
 int
 rte_tm_node_wfq_weight_mode_update(uint16_t port_id,
 	uint32_t node_id,
@@ -1698,6 +1915,7 @@ rte_tm_node_wfq_weight_mode_update(uint16_t port_id,
  *
  * @see RTE_TM_UPDATE_NODE_CMAN
  */
+__rte_experimental
 int
 rte_tm_node_cman_update(uint16_t port_id,
 	uint32_t node_id,
@@ -1722,6 +1940,7 @@ rte_tm_node_cman_update(uint16_t port_id,
   *
  * @see struct rte_tm_capabilities::cman_wred_context_private_n_max
 */
+__rte_experimental
 int
 rte_tm_node_wred_context_update(uint16_t port_id,
 	uint32_t node_id,
@@ -1747,6 +1966,7 @@ rte_tm_node_wred_context_update(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::cman_wred_context_shared_n_max
  */
+__rte_experimental
 int
 rte_tm_node_shared_wred_context_update(uint16_t port_id,
 	uint32_t node_id,
@@ -1779,6 +1999,7 @@ rte_tm_node_shared_wred_context_update(uint16_t port_id,
  *
  * @see enum rte_tm_stats_type
  */
+__rte_experimental
 int
 rte_tm_node_stats_read(uint16_t port_id,
 	uint32_t node_id,
@@ -1816,6 +2037,7 @@ rte_tm_node_stats_read(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::mark_vlan_dei_supported
  */
+__rte_experimental
 int
 rte_tm_mark_vlan_dei(uint16_t port_id,
 	int mark_green,
@@ -1866,6 +2088,7 @@ rte_tm_mark_vlan_dei(uint16_t port_id,
  * @see struct rte_tm_capabilities::mark_ip_ecn_tcp_supported
  * @see struct rte_tm_capabilities::mark_ip_ecn_sctp_supported
  */
+__rte_experimental
 int
 rte_tm_mark_ip_ecn(uint16_t port_id,
 	int mark_green,
@@ -1914,6 +2137,7 @@ rte_tm_mark_ip_ecn(uint16_t port_id,
  *
  * @see struct rte_tm_capabilities::mark_ip_dscp_supported
  */
+__rte_experimental
 int
 rte_tm_mark_ip_dscp(uint16_t port_id,
 	int mark_green,

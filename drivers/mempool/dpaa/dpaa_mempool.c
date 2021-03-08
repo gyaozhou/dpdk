@@ -37,6 +37,8 @@ struct dpaa_memseg_list rte_dpaa_memsegs
 
 struct dpaa_bp_info *rte_dpaa_bpid_info;
 
+RTE_LOG_REGISTER(dpaa_logtype_mempool, mempool.dpaa, NOTICE);
+
 static int
 dpaa_mbuf_create_pool(struct rte_mempool *mp)
 {
@@ -51,7 +53,7 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 
 	MEMPOOL_INIT_FUNC_TRACE();
 
-	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
 		if (ret) {
 			DPAA_MEMPOOL_ERR(
@@ -132,6 +134,7 @@ dpaa_mbuf_free_pool(struct rte_mempool *mp)
 		DPAA_MEMPOOL_INFO("BMAN pool freed for bpid =%d",
 				  bp_info->bpid);
 		rte_free(mp->pool_data);
+		bp_info->bp = NULL;
 		mp->pool_data = NULL;
 	}
 }
@@ -167,7 +170,7 @@ dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 	DPAA_MEMPOOL_DPDEBUG("Request to free %d buffers in bpid = %d",
 			     n, bp_info->bpid);
 
-	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
 		if (ret) {
 			DPAA_MEMPOOL_ERR("rte_dpaa_portal_init failed with ret: %d",
@@ -222,7 +225,7 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		return -1;
 	}
 
-	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
 		if (ret) {
 			DPAA_MEMPOOL_ERR("rte_dpaa_portal_init failed with ret: %d",

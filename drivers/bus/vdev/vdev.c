@@ -27,8 +27,6 @@
 
 #define VDEV_MP_KEY	"bus_vdev_mp"
 
-int vdev_logtype_bus;
-
 /* Forward declare to access virtual bus name */
 static struct rte_bus rte_vdev_bus;
 
@@ -142,10 +140,61 @@ vdev_parse(const char *name, void *addr)
 
 // zhou: go throught all registered driver's probe function.
 static int
+vdev_dma_map(struct rte_device *dev, void *addr, uint64_t iova, size_t len)
+{
+	struct rte_vdev_device *vdev = RTE_DEV_TO_VDEV(dev);
+	const struct rte_vdev_driver *driver;
+
+	if (!vdev) {
+		rte_errno = EINVAL;
+		return -1;
+	}
+
+	if (!vdev->device.driver) {
+		VDEV_LOG(DEBUG, "no driver attach to device %s", dev->name);
+		return 1;
+	}
+
+	driver = container_of(vdev->device.driver, const struct rte_vdev_driver,
+			driver);
+
+	if (driver->dma_map)
+		return driver->dma_map(vdev, addr, iova, len);
+
+	return 0;
+}
+
+static int
+vdev_dma_unmap(struct rte_device *dev, void *addr, uint64_t iova, size_t len)
+{
+	struct rte_vdev_device *vdev = RTE_DEV_TO_VDEV(dev);
+	const struct rte_vdev_driver *driver;
+
+	if (!vdev) {
+		rte_errno = EINVAL;
+		return -1;
+	}
+
+	if (!vdev->device.driver) {
+		VDEV_LOG(DEBUG, "no driver attach to device %s", dev->name);
+		return 1;
+	}
+
+	driver = container_of(vdev->device.driver, const struct rte_vdev_driver,
+			driver);
+
+	if (driver->dma_unmap)
+		return driver->dma_unmap(vdev, addr, iova, len);
+
+	return 0;
+}
+
+static int
 vdev_probe_all_drivers(struct rte_vdev_device *dev)
 {
 	const char *name;
 	struct rte_vdev_driver *driver;
+	enum rte_iova_mode iova_mode;
 	int ret;
 
 	if (rte_dev_is_probed(&dev->device))
@@ -156,6 +205,14 @@ vdev_probe_all_drivers(struct rte_vdev_device *dev)
 
 	if (vdev_parse(name, &driver))
 		return -1;
+
+	iova_mode = rte_eal_iova_mode();
+	if ((driver->drv_flags & RTE_VDEV_DRV_NEED_IOVA_AS_VA) && (iova_mode == RTE_IOVA_PA)) {
+		VDEV_LOG(ERR, "%s requires VA IOVA mode but current mode is PA, not initializing",
+				name);
+		return -1;
+	}
+
     // zhou: invoke such as virtio_user_pmd_probe()
 	ret = driver->probe(dev);
 	if (ret == 0)
@@ -460,7 +517,7 @@ scan:
 			 * by calling rte_devargs_insert() with
 			 *     devargs.bus = rte_bus_find_by_name("vdev");
 			 *     devargs.type = RTE_DEVTYPE_VIRTUAL;
-			 *     devargs.policy = RTE_DEV_WHITELISTED;
+			 *     devargs.policy = RTE_DEV_ALLOWED;
 			 */
 			custom_scan->callback(custom_scan->user_arg);
 	}
@@ -558,6 +615,25 @@ vdev_unplug(struct rte_device *dev)
 	return rte_vdev_uninit(dev->name);
 }
 
+static enum rte_iova_mode
+vdev_get_iommu_class(void)
+{
+	const char *name;
+	struct rte_vdev_device *dev;
+	struct rte_vdev_driver *driver;
+
+	TAILQ_FOREACH(dev, &vdev_device_list, next) {
+		name = rte_vdev_device_name(dev);
+		if (vdev_parse(name, &driver))
+			continue;
+
+		if (driver->drv_flags & RTE_VDEV_DRV_NEED_IOVA_AS_VA)
+			return RTE_IOVA_VA;
+	}
+
+	return RTE_IOVA_DC;
+}
+
 static struct rte_bus rte_vdev_bus = {
 	.scan = vdev_scan,
 	.probe = vdev_probe,
@@ -565,15 +641,12 @@ static struct rte_bus rte_vdev_bus = {
 	.plug = vdev_plug,
 	.unplug = vdev_unplug,
 	.parse = vdev_parse,
+	.dma_map = vdev_dma_map,
+	.dma_unmap = vdev_dma_unmap,
+	.get_iommu_class = vdev_get_iommu_class,
 	.dev_iterate = rte_vdev_dev_iterate,
 };
 
 // zhou: register vdev bus
 RTE_REGISTER_BUS(vdev, rte_vdev_bus);
-
-RTE_INIT(vdev_init_log)
-{
-	vdev_logtype_bus = rte_log_register("bus.vdev");
-	if (vdev_logtype_bus >= 0)
-		rte_log_set_level(vdev_logtype_bus, RTE_LOG_NOTICE);
-}
+RTE_LOG_REGISTER(vdev_logtype_bus, bus.vdev, NOTICE);

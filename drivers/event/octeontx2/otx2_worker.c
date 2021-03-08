@@ -25,7 +25,7 @@ otx2_ssogws_fwd_swtag(struct otx2_ssogws *ws, const struct rte_event *ev)
 {
 	const uint32_t tag = (uint32_t)ev->event;
 	const uint8_t new_tt = ev->sched_type;
-	const uint8_t cur_tt = ws->cur_tt;
+	const uint8_t cur_tt = OTX2_SSOW_TT_FROM_TAG(otx2_read64(ws->tag_op));
 
 	/* 96XX model
 	 * cur_tt/new_tt     SSO_SYNC_ORDERED SSO_SYNC_ATOMIC SSO_SYNC_UNTAGGED
@@ -64,7 +64,7 @@ otx2_ssogws_forward_event(struct otx2_ssogws *ws, const struct rte_event *ev)
 	const uint8_t grp = ev->queue_id;
 
 	/* Group hasn't changed, Use SWTAG to forward the event */
-	if (ws->cur_grp == grp)
+	if (OTX2_SSOW_GRP_FROM_TAG(otx2_read64(ws->tag_op)) == grp)
 		otx2_ssogws_fwd_swtag(ws, ev);
 	else
 	/*
@@ -75,14 +75,8 @@ otx2_ssogws_forward_event(struct otx2_ssogws *ws, const struct rte_event *ev)
 		otx2_ssogws_fwd_group(ws, ev, grp);
 }
 
-static __rte_always_inline void
-otx2_ssogws_release_event(struct otx2_ssogws *ws)
-{
-	otx2_ssogws_swtag_flush(ws);
-}
-
-#define R(name, f5, f4, f3, f2, f1, f0, flags)				\
-uint16_t __hot								\
+#define R(name, f6, f5, f4, f3, f2, f1, f0, flags)			\
+uint16_t __rte_hot								\
 otx2_ssogws_deq_ ##name(void *port, struct rte_event *ev,		\
 			uint64_t timeout_ticks)				\
 {									\
@@ -99,7 +93,7 @@ otx2_ssogws_deq_ ##name(void *port, struct rte_event *ev,		\
 	return otx2_ssogws_get_work(ws, ev, flags, ws->lookup_mem);	\
 }									\
 									\
-uint16_t __hot								\
+uint16_t __rte_hot								\
 otx2_ssogws_deq_burst_ ##name(void *port, struct rte_event ev[],	\
 			      uint16_t nb_events,			\
 			      uint64_t timeout_ticks)			\
@@ -109,7 +103,7 @@ otx2_ssogws_deq_burst_ ##name(void *port, struct rte_event ev[],	\
 	return otx2_ssogws_deq_ ##name(port, ev, timeout_ticks);	\
 }									\
 									\
-uint16_t __hot								\
+uint16_t __rte_hot								\
 otx2_ssogws_deq_timeout_ ##name(void *port, struct rte_event *ev,	\
 				uint64_t timeout_ticks)			\
 {									\
@@ -131,7 +125,7 @@ otx2_ssogws_deq_timeout_ ##name(void *port, struct rte_event *ev,	\
 	return ret;							\
 }									\
 									\
-uint16_t __hot								\
+uint16_t __rte_hot								\
 otx2_ssogws_deq_timeout_burst_ ##name(void *port, struct rte_event ev[],\
 				      uint16_t nb_events,		\
 				      uint64_t timeout_ticks)		\
@@ -141,7 +135,7 @@ otx2_ssogws_deq_timeout_burst_ ##name(void *port, struct rte_event ev[],\
 	return otx2_ssogws_deq_timeout_ ##name(port, ev, timeout_ticks);\
 }									\
 									\
-uint16_t __hot								\
+uint16_t __rte_hot								\
 otx2_ssogws_deq_seg_ ##name(void *port, struct rte_event *ev,		\
 			    uint64_t timeout_ticks)			\
 {									\
@@ -159,7 +153,7 @@ otx2_ssogws_deq_seg_ ##name(void *port, struct rte_event *ev,		\
 				    ws->lookup_mem);			\
 }									\
 									\
-uint16_t __hot								\
+uint16_t __rte_hot								\
 otx2_ssogws_deq_seg_burst_ ##name(void *port, struct rte_event ev[],	\
 				  uint16_t nb_events,			\
 				  uint64_t timeout_ticks)		\
@@ -169,7 +163,7 @@ otx2_ssogws_deq_seg_burst_ ##name(void *port, struct rte_event ev[],	\
 	return otx2_ssogws_deq_seg_ ##name(port, ev, timeout_ticks);	\
 }									\
 									\
-uint16_t __hot								\
+uint16_t __rte_hot								\
 otx2_ssogws_deq_seg_timeout_ ##name(void *port, struct rte_event *ev,	\
 				    uint64_t timeout_ticks)		\
 {									\
@@ -193,7 +187,7 @@ otx2_ssogws_deq_seg_timeout_ ##name(void *port, struct rte_event *ev,	\
 	return ret;							\
 }									\
 									\
-uint16_t __hot								\
+uint16_t __rte_hot								\
 otx2_ssogws_deq_seg_timeout_burst_ ##name(void *port,			\
 					  struct rte_event ev[],	\
 					  uint16_t nb_events,		\
@@ -208,7 +202,7 @@ otx2_ssogws_deq_seg_timeout_burst_ ##name(void *port,			\
 SSO_RX_ADPTR_ENQ_FASTPATH_FUNC
 #undef R
 
-uint16_t __hot
+uint16_t __rte_hot
 otx2_ssogws_enq(void *port, const struct rte_event *ev)
 {
 	struct otx2_ssogws *ws = port;
@@ -221,7 +215,7 @@ otx2_ssogws_enq(void *port, const struct rte_event *ev)
 		otx2_ssogws_forward_event(ws, ev);
 		break;
 	case RTE_EVENT_OP_RELEASE:
-		otx2_ssogws_release_event(ws);
+		otx2_ssogws_swtag_flush(ws->tag_op, ws->swtag_flush_op);
 		break;
 	default:
 		return 0;
@@ -230,7 +224,7 @@ otx2_ssogws_enq(void *port, const struct rte_event *ev)
 	return 1;
 }
 
-uint16_t __hot
+uint16_t __rte_hot
 otx2_ssogws_enq_burst(void *port, const struct rte_event ev[],
 		      uint16_t nb_events)
 {
@@ -238,7 +232,7 @@ otx2_ssogws_enq_burst(void *port, const struct rte_event ev[],
 	return otx2_ssogws_enq(port, ev);
 }
 
-uint16_t __hot
+uint16_t __rte_hot
 otx2_ssogws_enq_new_burst(void *port, const struct rte_event ev[],
 			  uint16_t nb_events)
 {
@@ -255,7 +249,7 @@ otx2_ssogws_enq_new_burst(void *port, const struct rte_event ev[],
 	return nb_events;
 }
 
-uint16_t __hot
+uint16_t __rte_hot
 otx2_ssogws_enq_fwd_burst(void *port, const struct rte_event ev[],
 			  uint16_t nb_events)
 {
@@ -267,8 +261,8 @@ otx2_ssogws_enq_fwd_burst(void *port, const struct rte_event ev[],
 	return 1;
 }
 
-#define T(name, f5, f4, f3, f2, f1, f0, sz, flags)			\
-uint16_t __hot								\
+#define T(name, f6, f5, f4, f3, f2, f1, f0, sz, flags)			\
+uint16_t __rte_hot							\
 otx2_ssogws_tx_adptr_enq_ ## name(void *port, struct rte_event ev[],	\
 				  uint16_t nb_events)			\
 {									\
@@ -276,22 +270,29 @@ otx2_ssogws_tx_adptr_enq_ ## name(void *port, struct rte_event ev[],	\
 	uint64_t cmd[sz];						\
 									\
 	RTE_SET_USED(nb_events);					\
-	return otx2_ssogws_event_tx(ws, ev, cmd, flags);		\
+	return otx2_ssogws_event_tx(ws->base, &ev[0], cmd,		\
+				    (const uint64_t			\
+				    (*)[RTE_MAX_QUEUES_PER_PORT])	\
+				    &ws->tx_adptr_data,			\
+				    flags);				\
 }
 SSO_TX_ADPTR_ENQ_FASTPATH_FUNC
 #undef T
 
-#define T(name, f5, f4, f3, f2, f1, f0, sz, flags)			\
-uint16_t __hot								\
+#define T(name, f6, f5, f4, f3, f2, f1, f0, sz, flags)			\
+uint16_t __rte_hot							\
 otx2_ssogws_tx_adptr_enq_seg_ ## name(void *port, struct rte_event ev[],\
 				      uint16_t nb_events)		\
 {									\
-	struct otx2_ssogws *ws = port;					\
 	uint64_t cmd[(sz) + NIX_TX_MSEG_SG_DWORDS - 2];			\
+	struct otx2_ssogws *ws = port;					\
 									\
 	RTE_SET_USED(nb_events);					\
-	return otx2_ssogws_event_tx(ws, ev, cmd, (flags) |		\
-				    NIX_TX_MULTI_SEG_F);		\
+	return otx2_ssogws_event_tx(ws->base, &ev[0], cmd,		\
+				    (const uint64_t			\
+				    (*)[RTE_MAX_QUEUES_PER_PORT])	\
+				    &ws->tx_adptr_data,			\
+				    (flags) | NIX_TX_MULTI_SEG_F);	\
 }
 SSO_TX_ADPTR_ENQ_FASTPATH_FUNC
 #undef T
@@ -326,7 +327,7 @@ ssogws_flush_events(struct otx2_ssogws *ws, uint8_t queue_id, uintptr_t base,
 		if (fn != NULL && ev.u64 != 0)
 			fn(arg, ev);
 		if (ev.sched_type != SSO_TT_EMPTY)
-			otx2_ssogws_swtag_flush(ws);
+			otx2_ssogws_swtag_flush(ws->tag_op, ws->swtag_flush_op);
 		rte_mb();
 		aq_cnt = otx2_read64(base + SSO_LF_GGRP_AQ_CNT);
 		ds_cnt = otx2_read64(base + SSO_LF_GGRP_MISC_CNT);

@@ -15,7 +15,7 @@
 
 #include "eal_thread.h"
 
-#if defined(RTE_ARCH_ARM) || defined(RTE_ARCH_ARM64)
+#if defined(RTE_ARCH_ARM)
 #define MAX_HUGEPAGE_SIZES 4  /**< support up to 4 page sizes */
 #else
 #define MAX_HUGEPAGE_SIZES 3  /**< support up to 3 page sizes */
@@ -34,6 +34,12 @@ struct hugepage_info {
 	/**< number of hugepages of that size on each socket */
 
 	int lock_descriptor;    /**< file descriptor for hugepage dir */
+};
+
+struct simd_bitwidth {
+	bool forced;
+	/**< flag indicating if bitwidth is forced and can't be modified */
+	uint16_t bitwidth; /**< bitwidth value */
 };
 
 /**
@@ -118,6 +124,8 @@ struct internal_config {
 
 	/** default interrupt mode for VFIO */
 	volatile enum rte_intr_mode vfio_intr_mode;
+	/** the shared VF token for VFIO-PCI bound PF and VFs devices */
+	rte_uuid_t vfio_vf_token;
     // zhou: could be specified using "--file-prefix"
 	char *hugefile_prefix;      /**< the base filename of hugetlbfs files */
 
@@ -137,8 +145,10 @@ struct internal_config {
 	rte_cpuset_t ctrl_cpuset;         /**< cpuset for ctrl threads */
 	volatile unsigned int init_complete;
 	/**< indicates whether EAL has completed initialization */
+	unsigned int no_telemetry; /**< true to disable Telemetry */
+	struct simd_bitwidth max_simd_bitwidth;
+	/**< max simd bitwidth path to use */
 };
-extern struct internal_config internal_config; /**< Global EAL configuration. */
 
 void eal_reset_internal_config(struct internal_config *internal_cfg);
 

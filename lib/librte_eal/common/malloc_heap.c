@@ -241,6 +241,9 @@ heap_alloc(struct malloc_heap *heap, const char *type __rte_unused, size_t size,
 	size = RTE_CACHE_LINE_ROUNDUP(size);
 	align = RTE_CACHE_LINE_ROUNDUP(align);
 
+	/* roundup might cause an overflow */
+	if (size == 0)
+		return NULL;
 	elem = find_suitable_element(heap, size, flags, align, bound, contig);
 	if (elem != NULL) {
 		elem = malloc_elem_alloc(elem, size, align, bound, contig);
@@ -458,6 +461,7 @@ try_expand_heap_secondary(struct malloc_heap *heap, uint64_t pg_sz,
 		size_t elt_size, int socket, unsigned int flags, size_t align,
 		size_t bound, bool contig)
 {
+	struct rte_mem_config *mcfg = rte_eal_get_configuration()->mem_config;
 	struct malloc_mp_req req;
 	int req_result;
 
@@ -471,7 +475,7 @@ try_expand_heap_secondary(struct malloc_heap *heap, uint64_t pg_sz,
 	req.alloc_req.elt_size = elt_size;
 	req.alloc_req.page_sz = pg_sz;
 	req.alloc_req.socket = socket;
-	req.alloc_req.heap = heap; /* it's in shared memory */
+	req.alloc_req.malloc_heap_idx = heap - mcfg->malloc_heaps;
 
 	req_result = request_to_primary(&req);
 
@@ -640,13 +644,15 @@ malloc_heap_alloc_on_heap_id(const char *type, size_t size,
 	unsigned int size_flags = flags & ~RTE_MEMZONE_SIZE_HINT_ONLY;
 	int socket_id;
 	void *ret;
+	const struct internal_config *internal_conf =
+		eal_get_internal_configuration();
 
 	rte_spinlock_lock(&(heap->lock));
 
 	align = align == 0 ? 1 : align;
 
 	/* for legacy mode, try once and with all flags */
-	if (internal_config.legacy_mem) {
+	if (internal_conf->legacy_mem) {
 		ret = heap_alloc(heap, type, size, flags, align, bound, contig);
 		goto alloc_unlock;
 	}
@@ -831,6 +837,8 @@ malloc_heap_free(struct malloc_elem *elem)
 	struct rte_memseg_list *msl;
 	unsigned int i, n_segs, before_space, after_space;
 	int ret;
+	const struct internal_config *internal_conf =
+		eal_get_internal_configuration();
 
 	if (!malloc_elem_cookies_ok(elem) || elem->state != ELEM_BUSY)
 		return -1;
@@ -853,7 +861,7 @@ malloc_heap_free(struct malloc_elem *elem)
 	/* ...of which we can't avail if we are in legacy mode, or if this is an
 	 * externally allocated segment.
 	 */
-	if (internal_config.legacy_mem || (msl->external > 0))
+	if (internal_conf->legacy_mem || (msl->external > 0))
 		goto free_unlock;
 
 	/* check if we can free any memory back to the system */
@@ -864,7 +872,7 @@ malloc_heap_free(struct malloc_elem *elem)
 	 * we will defer freeing these hugepages until the entire original allocation
 	 * can be freed
 	 */
-	if (internal_config.match_allocations && elem->size != elem->orig_size)
+	if (internal_conf->match_allocations && elem->size != elem->orig_size)
 		goto free_unlock;
 
 	/* probably, but let's make sure, as we may not be using up full page */
@@ -1323,10 +1331,11 @@ rte_eal_malloc_heap_init(void)
 {
 	struct rte_mem_config *mcfg = rte_eal_get_configuration()->mem_config;
 	unsigned int i;
+	const struct internal_config *internal_conf =
+		eal_get_internal_configuration();
 
-	if (internal_config.match_allocations) {
+	if (internal_conf->match_allocations)
 		RTE_LOG(DEBUG, EAL, "Hugepages will be freed exactly as allocated.\n");
-	}
 
 	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
 		/* assign min socket ID to external heaps */

@@ -138,6 +138,8 @@ typedef void (*compressdev_stats_reset_t)(struct rte_compressdev *dev);
  *
  * @param dev
  *   Compress device
+ * @param dev_info
+ *   Compress device information to populate
  */
 typedef void (*compressdev_info_get_t)(struct rte_compressdev *dev,
 				struct rte_compressdev_info *dev_info);
@@ -172,16 +174,6 @@ typedef int (*compressdev_queue_pair_setup_t)(struct rte_compressdev *dev,
  */
 typedef int (*compressdev_queue_pair_release_t)(struct rte_compressdev *dev,
 		uint16_t qp_id);
-
-/**
- * Get number of available queue pairs of a device.
- *
- * @param dev
- *   Compress device
- * @return
- *   Returns number of queue pairs on success.
- */
-typedef uint32_t (*compressdev_queue_pair_count_t)(struct rte_compressdev *dev);
 
 /**
  * Create driver private stream data.

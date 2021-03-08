@@ -35,8 +35,9 @@ cperf_throughput_test_free(struct cperf_throughput_ctx *ctx)
 	if (!ctx)
 		return;
 	if (ctx->sess) {
-#ifdef RTE_LIBRTE_SECURITY
-		if (ctx->options->op_type == CPERF_PDCP) {
+#ifdef RTE_LIB_SECURITY
+		if (ctx->options->op_type == CPERF_PDCP ||
+				ctx->options->op_type == CPERF_DOCSIS) {
 			struct rte_security_ctx *sec_ctx =
 				(struct rte_security_ctx *)
 				rte_cryptodev_get_sec_ctx(ctx->dev_id);
@@ -298,8 +299,8 @@ cperf_throughput_test_runner(void *test_ctx)
 					"Failed Deq,Ops(Millions),Throughput(Gbps),"
 					"Cycles/Buf\n\n");
 
-			printf("%u;%u;%u;%"PRIu64";%"PRIu64";%"PRIu64";%"PRIu64";"
-					"%.3f;%.3f;%.3f\n",
+			printf("%u,%u,%u,%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64","
+					"%.3f,%.3f,%.3f\n",
 					ctx->lcore_id,
 					ctx->options->test_buffer_size,
 					test_burst_size,

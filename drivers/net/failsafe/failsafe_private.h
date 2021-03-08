@@ -12,7 +12,7 @@
 
 #include <rte_atomic.h>
 #include <rte_dev.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_devargs.h>
 #include <rte_flow.h>
 #include <rte_interrupts.h>
@@ -57,6 +57,14 @@ struct rx_proxy {
 	uint32_t scid;
 	enum rxp_service_state sstate;
 };
+
+#define FS_RX_PROXY_INIT (struct rx_proxy){ \
+	.efd = -1, \
+	.evec = NULL, \
+	.sid = 0, \
+	.scid = 0, \
+	.sstate = SS_NO_SERVICE, \
+}
 
 struct rxq {
 	struct fs_priv *priv;
@@ -141,7 +149,7 @@ struct fs_priv {
 	/*
 	 * Set of sub_devices.
 	 * subs[0] is the preferred device
-	 * any other is just another slave
+	 * any other is just another sub device
 	 */
 	struct sub_device *subs;  /* shared between processes */
 	uint8_t subs_head; /* if head == tail, no subs */
@@ -228,6 +236,7 @@ int failsafe_eal_uninit(struct rte_eth_dev *dev);
 
 int failsafe_eth_dev_state_sync(struct rte_eth_dev *dev);
 void failsafe_eth_dev_unregister_callbacks(struct sub_device *sdev);
+int failsafe_eth_dev_close(struct rte_eth_dev *dev);
 void failsafe_dev_remove(struct rte_eth_dev *dev);
 void failsafe_stats_increment(struct rte_eth_stats *to,
 				struct rte_eth_stats *from);

@@ -19,8 +19,8 @@
 #include <pcap.h>
 
 #include <rte_cycles.h>
-#include <rte_ethdev_driver.h>
-#include <rte_ethdev_vdev.h>
+#include <ethdev_driver.h>
+#include <ethdev_vdev.h>
 #include <rte_kvargs.h>
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
@@ -51,10 +51,22 @@ static uint64_t start_cycles;
 static uint64_t hz;
 static uint8_t iface_idx;
 
+static uint64_t timestamp_rx_dynflag;
+static int timestamp_dynfield_offset = -1;
+
 struct queue_stat {
 	volatile unsigned long pkts;
 	volatile unsigned long bytes;
 	volatile unsigned long err_pkts;
+};
+
+struct queue_missed_stat {
+	/* last value retrieved from pcap */
+	unsigned int pcap;
+	/* stores values lost by pcap stop or rollover */
+	unsigned long mnemonic;
+	/* value on last reset */
+	unsigned long reset;
 };
 
 struct pcap_rx_queue {
@@ -62,6 +74,7 @@ struct pcap_rx_queue {
 	uint16_t queue_id;
 	struct rte_mempool *mb_pool;
 	struct queue_stat rx_stat;
+	struct queue_missed_stat missed_stat;
 	char name[PATH_MAX];
 	char type[ETH_PCAP_ARG_MAXLEN];
 
@@ -135,11 +148,61 @@ static struct rte_eth_link pmd_link = {
 		.link_autoneg = ETH_LINK_FIXED,
 };
 
-static int eth_pcap_logtype;
+RTE_LOG_REGISTER(eth_pcap_logtype, pmd.net.pcap, NOTICE);
 
 #define PMD_LOG(level, fmt, args...) \
 	rte_log(RTE_LOG_ ## level, eth_pcap_logtype, \
 		"%s(): " fmt "\n", __func__, ##args)
+
+static struct queue_missed_stat*
+queue_missed_stat_update(struct rte_eth_dev *dev, unsigned int qid)
+{
+	struct pmd_internals *internals = dev->data->dev_private;
+	struct queue_missed_stat *missed_stat =
+			&internals->rx_queue[qid].missed_stat;
+	const struct pmd_process_private *pp = dev->process_private;
+	pcap_t *pcap = pp->rx_pcap[qid];
+	struct pcap_stat stat;
+
+	if (!pcap || (pcap_stats(pcap, &stat) != 0))
+		return missed_stat;
+
+	/* rollover check - best effort fixup assuming single rollover */
+	if (stat.ps_drop < missed_stat->pcap)
+		missed_stat->mnemonic += UINT_MAX;
+	missed_stat->pcap = stat.ps_drop;
+
+	return missed_stat;
+}
+
+static void
+queue_missed_stat_on_stop_update(struct rte_eth_dev *dev, unsigned int qid)
+{
+	struct queue_missed_stat *missed_stat =
+			queue_missed_stat_update(dev, qid);
+
+	missed_stat->mnemonic += missed_stat->pcap;
+	missed_stat->pcap = 0;
+}
+
+static void
+queue_missed_stat_reset(struct rte_eth_dev *dev, unsigned int qid)
+{
+	struct queue_missed_stat *missed_stat =
+			queue_missed_stat_update(dev, qid);
+
+	missed_stat->reset = missed_stat->pcap;
+	missed_stat->mnemonic = 0;
+}
+
+static unsigned long
+queue_missed_stat_get(struct rte_eth_dev *dev, unsigned int qid)
+{
+	const struct queue_missed_stat *missed_stat =
+			queue_missed_stat_update(dev, qid);
+
+	return missed_stat->pcap + missed_stat->mnemonic - missed_stat->reset;
+}
 
 static int
 eth_pcap_rx_jumbo(struct rte_mempool *mb_pool, struct rte_mbuf *mbuf,
@@ -265,9 +328,11 @@ eth_pcap_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		}
 
 		mbuf->pkt_len = (uint16_t)header.caplen;
-		mbuf->timestamp = (uint64_t)header.ts.tv_sec * 1000000
-							+ header.ts.tv_usec;
-		mbuf->ol_flags |= PKT_RX_TIMESTAMP;
+		*RTE_MBUF_DYNFIELD(mbuf, timestamp_dynfield_offset,
+			rte_mbuf_timestamp_t *) =
+				(uint64_t)header.ts.tv_sec * 1000000 +
+				header.ts.tv_usec;
+		mbuf->ol_flags |= timestamp_rx_dynflag;
 		mbuf->port = pcap_q->port_id;
 		bufs[num_rx] = mbuf;
 		num_rx++;
@@ -287,6 +352,8 @@ eth_null_rx(void *queue __rte_unused,
 	return 0;
 }
 
+#define NSEC_PER_SEC	1000000000L
+
 static inline void
 calculate_timestamp(struct timeval *ts) {
 	uint64_t cycles;
@@ -294,8 +361,14 @@ calculate_timestamp(struct timeval *ts) {
 
 	cycles = rte_get_timer_cycles() - start_cycles;
 	cur_time.tv_sec = cycles / hz;
-	cur_time.tv_usec = (cycles % hz) * 1e6 / hz;
-	timeradd(&start_time, &cur_time, ts);
+	cur_time.tv_usec = (cycles % hz) * NSEC_PER_SEC / hz;
+
+	ts->tv_sec = start_time.tv_sec + cur_time.tv_sec;
+	ts->tv_usec = start_time.tv_usec + cur_time.tv_usec;
+	if (ts->tv_usec >= NSEC_PER_SEC) {
+		ts->tv_usec -= NSEC_PER_SEC;
+		ts->tv_sec += 1;
+	}
 }
 
 /*
@@ -313,7 +386,7 @@ eth_pcap_tx_dumper(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct pcap_pkthdr header;
 	pcap_dumper_t *dumper;
 	unsigned char temp_data[RTE_ETH_PCAP_SNAPLEN];
-	size_t len;
+	size_t len, caplen;
 
 	pp = rte_eth_devices[dumper_q->port_id].process_private;
 	dumper = pp->tx_dumper[dumper_q->queue_id];
@@ -325,28 +398,24 @@ eth_pcap_tx_dumper(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	 * dumper */
 	for (i = 0; i < nb_pkts; i++) {
 		mbuf = bufs[i];
-		len = rte_pktmbuf_pkt_len(mbuf);
+		len = caplen = rte_pktmbuf_pkt_len(mbuf);
 		if (unlikely(!rte_pktmbuf_is_contiguous(mbuf) &&
 				len > sizeof(temp_data))) {
-			PMD_LOG(ERR,
-				"Dropping multi segment PCAP packet. Size (%zd) > max size (%zd).",
-				len, sizeof(temp_data));
-			rte_pktmbuf_free(mbuf);
-			continue;
+			caplen = sizeof(temp_data);
 		}
 
 		calculate_timestamp(&header.ts);
 		header.len = len;
-		header.caplen = header.len;
+		header.caplen = caplen;
 		/* rte_pktmbuf_read() returns a pointer to the data directly
 		 * in the mbuf (when the mbuf is contiguous) or, otherwise,
 		 * a pointer to temp_data after copying into it.
 		 */
 		pcap_dump((u_char *)dumper, &header,
-			rte_pktmbuf_read(mbuf, 0, len, temp_data));
+			rte_pktmbuf_read(mbuf, 0, caplen, temp_data));
 
 		num_tx++;
-		tx_bytes += len;
+		tx_bytes += caplen;
 		rte_pktmbuf_free(mbuf);
 	}
 
@@ -377,7 +446,7 @@ eth_tx_drop(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		return 0;
 
 	for (i = 0; i < nb_pkts; i++) {
-		tx_bytes += bufs[i]->data_len;
+		tx_bytes += bufs[i]->pkt_len;
 		rte_pktmbuf_free(bufs[i]);
 	}
 
@@ -479,7 +548,8 @@ open_single_tx_pcap(const char *pcap_filename, pcap_dumper_t **dumper)
 	 * with pcap_dump_open(). We create big enough an Ethernet
 	 * pcap holder.
 	 */
-	tx_pcap = pcap_open_dead(DLT_EN10MB, RTE_ETH_PCAP_SNAPSHOT_LEN);
+	tx_pcap = pcap_open_dead_with_tstamp_precision(DLT_EN10MB,
+			RTE_ETH_PCAP_SNAPSHOT_LEN, PCAP_TSTAMP_PRECISION_NANO);
 	if (tx_pcap == NULL) {
 		PMD_LOG(ERR, "Couldn't create dead pcap");
 		return -1;
@@ -602,7 +672,7 @@ status_up:
  * Is the only place for us to close all the tx streams dumpers.
  * If not called the dumpers will be flushed within each tx burst.
  */
-static void
+static int
 eth_dev_stop(struct rte_eth_dev *dev)
 {
 	unsigned int i;
@@ -611,9 +681,12 @@ eth_dev_stop(struct rte_eth_dev *dev)
 
 	/* Special iface case. Single pcap is open and shared between tx/rx. */
 	if (internals->single_iface) {
-		pcap_close(pp->tx_pcap[0]);
-		pp->tx_pcap[0] = NULL;
-		pp->rx_pcap[0] = NULL;
+		queue_missed_stat_on_stop_update(dev, 0);
+		if (pp->tx_pcap[0] != NULL) {
+			pcap_close(pp->tx_pcap[0]);
+			pp->tx_pcap[0] = NULL;
+			pp->rx_pcap[0] = NULL;
+		}
 		goto status_down;
 	}
 
@@ -631,6 +704,7 @@ eth_dev_stop(struct rte_eth_dev *dev)
 
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 		if (pp->rx_pcap[i] != NULL) {
+			queue_missed_stat_on_stop_update(dev, i);
 			pcap_close(pp->rx_pcap[i]);
 			pp->rx_pcap[i] = NULL;
 		}
@@ -644,6 +718,8 @@ status_down:
 		dev->data->tx_queue_state[i] = RTE_ETH_QUEUE_STATE_STOPPED;
 
 	dev->data->dev_link.link_status = ETH_LINK_DOWN;
+
+	return 0;
 }
 
 static int
@@ -673,6 +749,7 @@ eth_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 {
 	unsigned int i;
 	unsigned long rx_packets_total = 0, rx_bytes_total = 0;
+	unsigned long rx_missed_total = 0;
 	unsigned long tx_packets_total = 0, tx_bytes_total = 0;
 	unsigned long tx_packets_err_total = 0;
 	const struct pmd_internals *internal = dev->data->dev_private;
@@ -683,6 +760,7 @@ eth_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 		stats->q_ibytes[i] = internal->rx_queue[i].rx_stat.bytes;
 		rx_packets_total += stats->q_ipackets[i];
 		rx_bytes_total += stats->q_ibytes[i];
+		rx_missed_total += queue_missed_stat_get(dev, i);
 	}
 
 	for (i = 0; i < RTE_ETHDEV_QUEUE_STAT_CNTRS &&
@@ -696,6 +774,7 @@ eth_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 
 	stats->ipackets = rx_packets_total;
 	stats->ibytes = rx_bytes_total;
+	stats->imissed = rx_missed_total;
 	stats->opackets = tx_packets_total;
 	stats->obytes = tx_bytes_total;
 	stats->oerrors = tx_packets_err_total;
@@ -712,6 +791,7 @@ eth_stats_reset(struct rte_eth_dev *dev)
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 		internal->rx_queue[i].rx_stat.pkts = 0;
 		internal->rx_queue[i].rx_stat.bytes = 0;
+		queue_missed_stat_reset(dev, i);
 	}
 
 	for (i = 0; i < dev->data->nb_tx_queues; i++) {
@@ -723,26 +803,54 @@ eth_stats_reset(struct rte_eth_dev *dev)
 	return 0;
 }
 
-static void
+static inline void
+infinite_rx_ring_free(struct rte_ring *pkts)
+{
+	struct rte_mbuf *bufs;
+
+	while (!rte_ring_dequeue(pkts, (void **)&bufs))
+		rte_pktmbuf_free(bufs);
+
+	rte_ring_free(pkts);
+}
+
+static int
 eth_dev_close(struct rte_eth_dev *dev)
 {
 	unsigned int i;
 	struct pmd_internals *internals = dev->data->dev_private;
 
+	PMD_LOG(INFO, "Closing pcap ethdev on NUMA socket %d",
+			rte_socket_id());
+
+	eth_dev_stop(dev);
+
+	rte_free(dev->process_private);
+
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
 	/* Device wide flag, but cleanup must be performed per queue. */
 	if (internals->infinite_rx) {
 		for (i = 0; i < dev->data->nb_rx_queues; i++) {
 			struct pcap_rx_queue *pcap_q = &internals->rx_queue[i];
-			struct rte_mbuf *pcap_buf;
 
-			while (!rte_ring_dequeue(pcap_q->pkts,
-					(void **)&pcap_buf))
-				rte_pktmbuf_free(pcap_buf);
+			/*
+			 * 'pcap_q->pkts' can be NULL if 'eth_dev_close()'
+			 * called before 'eth_rx_queue_setup()' has been called
+			 */
+			if (pcap_q->pkts == NULL)
+				continue;
 
-			rte_ring_free(pcap_q->pkts);
+			infinite_rx_ring_free(pcap_q->pkts);
 		}
 	}
 
+	if (internals->phy_mac == 0)
+		/* not dynamically allocated, must not be freed */
+		dev->data->mac_addrs = NULL;
+
+	return 0;
 }
 
 static void
@@ -789,7 +897,7 @@ eth_rx_queue_setup(struct rte_eth_dev *dev,
 
 		pcap_pkt_count = count_packets_in_pcap(pcap, pcap_q);
 
-		snprintf(ring_name, sizeof(ring_name), "PCAP_RING%" PRIu16,
+		snprintf(ring_name, sizeof(ring_name), "PCAP_RING%" PRIu32,
 				ring_number);
 
 		pcap_q->pkts = rte_ring_create(ring_name,
@@ -803,21 +911,25 @@ eth_rx_queue_setup(struct rte_eth_dev *dev,
 		while (eth_pcap_rx(pcap_q, bufs, 1)) {
 			/* Check for multiseg mbufs. */
 			if (bufs[0]->nb_segs != 1) {
-				rte_pktmbuf_free(*bufs);
-
-				while (!rte_ring_dequeue(pcap_q->pkts,
-						(void **)bufs))
-					rte_pktmbuf_free(*bufs);
-
-				rte_ring_free(pcap_q->pkts);
-				PMD_LOG(ERR, "Multiseg mbufs are not supported in infinite_rx "
-						"mode.");
+				infinite_rx_ring_free(pcap_q->pkts);
+				PMD_LOG(ERR,
+					"Multiseg mbufs are not supported in infinite_rx mode.");
 				return -EINVAL;
 			}
 
 			rte_ring_enqueue_bulk(pcap_q->pkts,
 					(void * const *)bufs, 1, NULL);
 		}
+
+		if (rte_ring_count(pcap_q->pkts) < pcap_pkt_count) {
+			infinite_rx_ring_free(pcap_q->pkts);
+			PMD_LOG(ERR,
+				"Not enough mbufs to accommodate packets in pcap file. "
+				"At least %" PRIu64 " mbufs per queue is required.",
+				pcap_pkt_count);
+			return -EINVAL;
+		}
+
 		/*
 		 * Reset the stats for this queue since eth_pcap_rx calls above
 		 * didn't result in the application receiving packets.
@@ -1131,6 +1243,7 @@ pmd_init_internals(struct rte_vdev_device *vdev,
 	data->mac_addrs = &(*internals)->eth_addr;
 	data->promiscuous = 1;
 	data->all_multicast = 1;
+	data->dev_flags |= RTE_ETH_DEV_AUTOFILL_QUEUE_XSTATS;
 
 	/*
 	 * NOTE: we'll replace the data element, of originally allocated
@@ -1291,9 +1404,8 @@ eth_from_pcaps(struct rte_vdev_device *vdev,
 
 		/* phy_mac arg is applied only only if "iface" devarg is provided */
 		if (rx_queues->phy_mac) {
-			int ret = eth_pcap_update_mac(rx_queues->queue[0].name,
-					eth_dev, vdev->device.numa_node);
-			if (ret == 0)
+			if (eth_pcap_update_mac(rx_queues->queue[0].name,
+					eth_dev, vdev->device.numa_node) == 0)
 				internals->phy_mac = 1;
 		}
 	}
@@ -1344,6 +1456,13 @@ pmd_pcap_probe(struct rte_vdev_device *dev)
 	gettimeofday(&start_time, NULL);
 	start_cycles = rte_get_timer_cycles();
 	hz = rte_get_timer_hz();
+
+	ret = rte_mbuf_dyn_rx_timestamp_register(&timestamp_dynfield_offset,
+			&timestamp_rx_dynflag);
+	if (ret != 0) {
+		PMD_LOG(ERR, "Failed to register Rx timestamp field/flag");
+		return -1;
+	}
 
 	if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
 		eth_dev = rte_eth_dev_attach_secondary(name);
@@ -1398,7 +1517,8 @@ pmd_pcap_probe(struct rte_vdev_device *dev)
 	devargs_all.is_rx_pcap =
 		rte_kvargs_count(kvlist, ETH_PCAP_RX_PCAP_ARG) ? 1 : 0;
 	devargs_all.is_rx_iface =
-		rte_kvargs_count(kvlist, ETH_PCAP_RX_IFACE_ARG) ? 1 : 0;
+		(rte_kvargs_count(kvlist, ETH_PCAP_RX_IFACE_ARG) +
+		 rte_kvargs_count(kvlist, ETH_PCAP_RX_IFACE_IN_ARG)) ? 1 : 0;
 	pcaps.num_of_queue = 0;
 
 	devargs_all.is_tx_pcap =
@@ -1538,30 +1658,16 @@ free_kvlist:
 static int
 pmd_pcap_remove(struct rte_vdev_device *dev)
 {
-	struct pmd_internals *internals = NULL;
 	struct rte_eth_dev *eth_dev = NULL;
-
-	PMD_LOG(INFO, "Closing pcap ethdev on numa socket %d",
-			rte_socket_id());
 
 	if (!dev)
 		return -1;
 
-	/* reserve an ethdev entry */
 	eth_dev = rte_eth_dev_allocated(rte_vdev_device_name(dev));
 	if (eth_dev == NULL)
-		return -1;
-
-	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
-		internals = eth_dev->data->dev_private;
-		if (internals != NULL && internals->phy_mac == 0)
-			/* not dynamically allocated, must not be freed */
-			eth_dev->data->mac_addrs = NULL;
-	}
+		return 0; /* port already released */
 
 	eth_dev_close(eth_dev);
-
-	rte_free(eth_dev->process_private);
 	rte_eth_dev_release_port(eth_dev);
 
 	return 0;
@@ -1583,10 +1689,3 @@ RTE_PMD_REGISTER_PARAM_STRING(net_pcap,
 	ETH_PCAP_IFACE_ARG "=<ifc> "
 	ETH_PCAP_PHY_MAC_ARG "=<int>"
 	ETH_PCAP_INFINITE_RX_ARG "=<0|1>");
-
-RTE_INIT(eth_pcap_init_log)
-{
-	eth_pcap_logtype = rte_log_register("pmd.net.pcap");
-	if (eth_pcap_logtype >= 0)
-		rte_log_set_level(eth_pcap_logtype, RTE_LOG_NOTICE);
-}

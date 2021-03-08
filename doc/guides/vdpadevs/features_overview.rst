@@ -96,14 +96,14 @@ proto host notifier
 proto pagefault
   Slave expose page-fault FD for migration process.
 
-BSD nic_uio
-  BSD ``nic_uio`` module supported.
+queue statistics
+  Support virtio queue statistics query.
 
-Linux VFIO
-  Works with ``vfio-pci`` kernel module.
+FreeBSD
+  Support FreeBSD.
 
-Other kdrv
-  Kernel module other than above ones supported.
+Linux
+  Support Linux.
 
 ARMv7
   Support armv7 architecture.

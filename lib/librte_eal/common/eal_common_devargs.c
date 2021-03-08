@@ -301,7 +301,7 @@ rte_devargs_insert(struct rte_devargs **da)
 }
 
 // zhou: README,
-/* store a whitelist parameter for later parsing */
+/* store in allowed list parameter for later parsing */
 int
 rte_devargs_add(enum rte_devtype devtype, const char *devargs_str)
 {
@@ -319,15 +319,13 @@ rte_devargs_add(enum rte_devtype devtype, const char *devargs_str)
 
 	devargs->type = devtype;
 	bus = devargs->bus;
-
-	if (devargs->type == RTE_DEVTYPE_BLACKLISTED_PCI)
-		devargs->policy = RTE_DEV_BLACKLISTED;
-
+	if (devargs->type == RTE_DEVTYPE_BLOCKED)
+		devargs->policy = RTE_DEV_BLOCKED;
 	if (bus->conf.scan_mode == RTE_BUS_SCAN_UNDEFINED) {
-		if (devargs->policy == RTE_DEV_WHITELISTED)
-			bus->conf.scan_mode = RTE_BUS_SCAN_WHITELIST;
-		else if (devargs->policy == RTE_DEV_BLACKLISTED)
-			bus->conf.scan_mode = RTE_BUS_SCAN_BLACKLIST;
+		if (devargs->policy == RTE_DEV_ALLOWED)
+			bus->conf.scan_mode = RTE_BUS_SCAN_ALLOWLIST;
+		else if (devargs->policy == RTE_DEV_BLOCKED)
+			bus->conf.scan_mode = RTE_BUS_SCAN_BLOCKLIST;
 	}
 	TAILQ_INSERT_TAIL(&devargs_list, devargs, next);
 	return 0;

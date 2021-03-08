@@ -3,8 +3,8 @@
  * All rights reserved.
  */
 
-#include <rte_ethdev_driver.h>
-#include <rte_ethdev_pci.h>
+#include <ethdev_driver.h>
+#include <ethdev_pci.h>
 #include <rte_malloc.h>
 
 #include "base/common.h"
@@ -276,7 +276,10 @@ allocate_mac:
 		}
 	}
 
-	cxgbe_cfg_queues(adapter->eth_dev);
+	err = cxgbe_cfg_queues(adapter->eth_dev);
+	if (err)
+		goto out_free;
+
 	cxgbe_print_adapter_info(adapter);
 	cxgbe_print_port_info(adapter);
 
@@ -291,6 +294,8 @@ allocate_mac:
 	return 0;
 
 out_free:
+	cxgbe_cfg_queues_free(adapter);
+
 	for_each_port(adapter, i) {
 		pi = adap2pinfo(adapter, i);
 		if (pi->viid != 0)

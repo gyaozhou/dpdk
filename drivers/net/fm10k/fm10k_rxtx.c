@@ -4,7 +4,7 @@
 
 #include <inttypes.h>
 
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_common.h>
 #include <rte_net.h>
 #include "fm10k.h"
@@ -611,6 +611,8 @@ static inline void tx_xmit_pkt(struct fm10k_tx_queue *q, struct rte_mbuf *mb)
 	/* set vlan if requested */
 	if (mb->ol_flags & PKT_TX_VLAN_PKT)
 		q->hw_ring[q->next_free].vlan = mb->vlan_tci;
+	else
+		q->hw_ring[q->next_free].vlan = 0;
 
 	q->sw_ring[q->next_free] = mb;
 	q->hw_ring[q->next_free].buffer_addr =

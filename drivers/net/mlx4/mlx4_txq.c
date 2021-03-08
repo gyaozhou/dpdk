@@ -8,7 +8,6 @@
  * Tx queues configuration for mlx4 driver.
  */
 
-#include <assert.h>
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -28,7 +27,7 @@
 
 #include <rte_common.h>
 #include <rte_errno.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
 #include <rte_mempool.h>
@@ -51,8 +50,8 @@ txq_uar_init(struct txq *txq)
 	struct mlx4_priv *priv = txq->priv;
 	struct mlx4_proc_priv *ppriv = MLX4_PROC_PRIV(PORT_ID(priv));
 
-	assert(rte_eal_process_type() == RTE_PROC_PRIMARY);
-	assert(ppriv);
+	MLX4_ASSERT(rte_eal_process_type() == RTE_PROC_PRIMARY);
+	MLX4_ASSERT(ppriv);
 	ppriv->uar_table[txq->stats.idx] = txq->msq.db;
 }
 
@@ -81,7 +80,7 @@ txq_uar_init_secondary(struct txq *txq, int fd)
 	uintptr_t offset;
 	const size_t page_size = sysconf(_SC_PAGESIZE);
 
-	assert(ppriv);
+	MLX4_ASSERT(ppriv);
 	/*
 	 * As rdma-core, UARs are mapped in size of OS page
 	 * size. Ref to libmlx4 function: mlx4_init_context()
@@ -137,12 +136,12 @@ mlx4_tx_uar_init_secondary(struct rte_eth_dev *dev, int fd)
 	unsigned int i;
 	int ret;
 
-	assert(rte_eal_process_type() == RTE_PROC_SECONDARY);
+	MLX4_ASSERT(rte_eal_process_type() == RTE_PROC_SECONDARY);
 	for (i = 0; i != txqs_n; ++i) {
 		txq = dev->data->tx_queues[i];
 		if (!txq)
 			continue;
-		assert(txq->stats.idx == (uint16_t)i);
+		MLX4_ASSERT(txq->stats.idx == (uint16_t)i);
 		ret = txq_uar_init_secondary(txq, fd);
 		if (ret)
 			goto error;
@@ -158,15 +157,43 @@ error:
 	} while (i--);
 	return -rte_errno;
 }
+
+void
+mlx4_tx_uar_uninit_secondary(struct rte_eth_dev *dev)
+{
+	struct mlx4_proc_priv *ppriv =
+			(struct mlx4_proc_priv *)dev->process_private;
+	const size_t page_size = sysconf(_SC_PAGESIZE);
+	void *addr;
+	size_t i;
+
+	if (page_size == (size_t)-1) {
+		ERROR("Failed to get mem page size");
+		return;
+	}
+	for (i = 0; i < ppriv->uar_table_sz; i++) {
+		addr = ppriv->uar_table[i];
+		if (addr)
+			munmap(RTE_PTR_ALIGN_FLOOR(addr, page_size), page_size);
+	}
+}
+
 #else
 int
 mlx4_tx_uar_init_secondary(struct rte_eth_dev *dev __rte_unused,
 			   int fd __rte_unused)
 {
-	assert(rte_eal_process_type() == RTE_PROC_SECONDARY);
+	MLX4_ASSERT(rte_eal_process_type() == RTE_PROC_SECONDARY);
 	ERROR("UAR remap is not supported");
 	rte_errno = ENOTSUP;
 	return -rte_errno;
+}
+
+void
+mlx4_tx_uar_uninit_secondary(struct rte_eth_dev *dev __rte_unused)
+{
+	assert(rte_eal_process_type() == RTE_PROC_SECONDARY);
+	ERROR("UAR remap is not supported");
 }
 #endif
 
@@ -188,7 +215,7 @@ mlx4_txq_free_elts(struct txq *txq)
 	while (elts_tail != elts_head) {
 		struct txq_elt *elt = &(*elts)[elts_tail++ & elts_m];
 
-		assert(elt->buf != NULL);
+		MLX4_ASSERT(elt->buf != NULL);
 		rte_pktmbuf_free(elt->buf);
 		elt->buf = NULL;
 		elt->wqe = NULL;
@@ -489,7 +516,7 @@ error:
 	ret = rte_errno;
 	mlx4_tx_queue_release(txq);
 	rte_errno = ret;
-	assert(rte_errno > 0);
+	MLX4_ASSERT(rte_errno > 0);
 	priv->verbs_alloc_ctx.type = MLX4_VERBS_ALLOC_TYPE_NONE;
 	return -rte_errno;
 }
